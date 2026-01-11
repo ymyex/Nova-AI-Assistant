@@ -1,0 +1,185 @@
+# =====================================================
+# ENVIRONMENT & SECRETS
+# =====================================================
+.env
+.env.local
+.env.*.local
+*.local
+
+# Gmail OAuth credentials and tokens (SENSITIVE!)
+gmail_credentials.json
+gmail_token.json
+
+# =====================================================
+# PYTHON
+# =====================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+cython_debug/
+*.egg-info/
+*.egg
+.installed.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+.pdm.toml
+.pdm-python
+.pdm-build/
+__pypackages__/
+.python-version
+
+# =====================================================
+# NODE.JS / FRONTEND
+# =====================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.npm/
+.yarn/
+*.tsbuildinfo
+
+# =====================================================
+# GO (whatsapp-bridge)
+# =====================================================
+# Do not commit compiled Go binaries
+*.exe
+*.dll
+*.dylib
+
+# =====================================================
+# BUILD OUTPUTS
+# =====================================================
+dist/
+dist-ssr/
+dist-native/
+build/
+bin/
+wheels/
+sdist/
+downloads/
+eggs/
+.eggs/
+develop-eggs/
+parts/
+var/
+lib/
+lib64/
+share/python-wheels/
+MANIFEST
+
+# =====================================================
+# LOGS & DEBUG OUTPUT
+# =====================================================
+*.log
+agent.log
+logs/
+logs_output.txt
+netstat_dump.txt
+build.log
+bridge.log
+mcp.log
+
+# =====================================================
+# DATABASE FILES
+# =====================================================
+*.db
+*.db-journal
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3
+db.sqlite3-journal
+
+# =====================================================
+# WHATSAPP MCP SESSION DATA
+# =====================================================
+# WhatsApp bridge stores session data that should NOT be committed
+whatsapp-mcp/whatsapp-bridge/store/
+whatsapp-mcp/whatsapp-bridge/*.exe
+claude_desktop_config.json
+
+# =====================================================
+# OS GENERATED FILES
+# =====================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =====================================================
+# IDE / EDITOR
+# =====================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# =====================================================
+# TESTING & COVERAGE
+# =====================================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+cover/
+
+# =====================================================
+# JUPYTER / IPYTHON
+# =====================================================
+.ipynb_checkpoints
+*.ipynb
+profile_default/
+ipython_config.py
+
+# =====================================================
+# MISC
+# =====================================================
+*.manifest
+*.spec
+*.bak
+*.backup
+*.tmp
+*.temp
+.mcpregistry_github_token
+.mcpregistry_registry_token
+sandbox/
+*.mcpb
+
+# UV lock files (optional - some projects commit these)
+# uv.lock
