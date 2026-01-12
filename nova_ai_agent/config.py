@@ -28,6 +28,10 @@ class Settings:
     # Gmail OAuth2 configuration
     gmail_credentials_path: str
     gmail_token_path: str
+    # OpenCode configuration
+    opencode_base_url: str
+    opencode_path: str
+    opencode_auto_start: bool
 
     @property
     def gemini_endpoint(self) -> str:
@@ -50,6 +54,7 @@ def get_settings() -> Settings:
     project_root = Path(__file__).parent.parent
     default_gmail_creds = str(project_root / "gmail_credentials.json")
     default_gmail_token = str(project_root / "gmail_token.json")
+    default_opencode_path = str(project_root / "opencode")
 
     settings = Settings(
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
@@ -60,6 +65,9 @@ def get_settings() -> Settings:
         whatsapp_db_path=os.getenv("WHATSAPP_DB_PATH", _default_whatsapp_db_path()),
         gmail_credentials_path=os.getenv("GMAIL_CREDENTIALS_PATH", default_gmail_creds),
         gmail_token_path=os.getenv("GMAIL_TOKEN_PATH", default_gmail_token),
+        opencode_base_url=os.getenv("OPENCODE_BASE_URL", "http://localhost:4096"),
+        opencode_path=os.getenv("OPENCODE_PATH", default_opencode_path),
+        opencode_auto_start=os.getenv("OPENCODE_AUTO_START", "true").lower() == "true",
     )
 
     return settings

@@ -166,9 +166,8 @@ class GmailClient:
             )
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
-                include_granted_scopes='true'
-                # Note: Removed prompt='consent' to avoid forcing re-consent
-                # This allows existing refresh tokens to remain valid
+                include_granted_scopes='true',
+                prompt='consent'
             )
             return auth_url
         except Exception as e:

@@ -7,4 +7,8 @@ google-genai>=1.56.0
 google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.2.0
 google-api-python-client>=2.100.0
+# Audio processing
+pydub>=0.25.0
+# OpenCode agentic coding
+opencode-ai>=0.1.0a36
 

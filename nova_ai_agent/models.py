@@ -23,21 +23,21 @@ class IncomingMessage(BaseModel):
     context: List[ContextMessage] = Field(default_factory=list, description="Additional context messages")
 
 
-class SuggestionPayload(BaseModel):
+class NovaPayload(BaseModel):
     message: IncomingMessage
     force_group_name: Optional[str] = Field(default=None, description="Override target group name")
 
 
-class SuggestionResult(BaseModel):
-    suggestion: str
+class NovaResult(BaseModel):
+    response: str
     group_jid: str
     delivered: bool
     details: str
 
 
-class SuggestionResponse(BaseModel):
+class NovaResponse(BaseModel):
     success: bool
-    result: Optional[SuggestionResult] = None
+    result: Optional[NovaResult] = None
     error: Optional[str] = None
 
 

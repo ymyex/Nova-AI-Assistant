@@ -18,10 +18,11 @@ REM Wait for port 80 to be fully released
 echo [2/3] Waiting for port 80 to be released...
 timeout /t 3 /nobreak >nul
 
-REM Start the backend
+REM Start the backend (OpenCode server auto-starts via Python)
 echo [3/3] Starting Nova AI Assistant Backend...
+echo       (OpenCode server will auto-start on first request)
 echo.
-python -m uvicorn app.main:app --host 0.0.0.0 --port 80
+python -m uvicorn app.main:app --host 0.0.0.0 --port 80 --no-access-log --log-level warning
 
 REM If we get here, the server stopped
 echo.

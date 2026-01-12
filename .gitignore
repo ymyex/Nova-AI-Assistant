@@ -115,10 +115,11 @@ whatsapp-mcp/whatsapp-bridge/*.exe
 claude_desktop_config.json
 
 # =====================================================
-# OS GENERATED FILES
+# OPENCODE BUILD ARTIFACTS (source is tracked)
 # =====================================================
-.DS_Store
-.DS_Store?
+opencode/node_modules/
+opencode/.turbo/
+opencode/dist/
 ._*
 .Spotlight-V100
 .Trashes

@@ -160,6 +160,14 @@ RESTful API server with dual-session support.
 - `POST /api/whatsapp/unpair?session=<name>` - Session-specific unpairing
 - `POST /suggestions` - Main AI endpoint (uses replying session)
 
+### 5. OpenCode Agent (`opencode/`)
+
+Bundled coding agent for autonomous file operations and coding tasks.
+- **Auto-starts** on backend launch (Port 4096)
+- **Bundled Source**: Full TypeScript source included in `opencode/`
+- **Zero Config**: No separate installation required
+- **First Run**: Automatically builds dependencies (`npm install && npm run build`) on first startup
+
 ### 4. Web Frontend (`frontend/src/`)
 
 React + TypeScript dashboard.
@@ -177,7 +185,7 @@ React + TypeScript dashboard.
 ### Prerequisites
 - **Python 3.11+**
 - **Go 1.21+** (with CGO enabled for Windows)
-- **Node.js 18+**
+- **Node.js 18+** (Required for bundled OpenCode)
 - **Google Gemini API Key** - [Get one here](https://makersuite.google.com/app/apikey)
 
 ### 1. Clone and Configure
@@ -617,6 +625,7 @@ Nova-AI-Assistant/
         ├── session.go            # Session struct & methods
         ├── handlers.go           # Event handling
         ├── server.go             # REST API
+        ├── server.go             # REST API
         ├── db.go                 # Message storage
         ├── utils.go              # Helpers
         └── store/                # SQLite databases
@@ -624,6 +633,11 @@ Nova-AI-Assistant/
             ├── whatsapp_replying.db
             ├── messages_monitoring.db
             └── messages_replying.db
+
+├── opencode/                     # Bundled OpenCode Source
+│   ├── packages/                 # TypeScript packages
+│   ├── package.json              # Build config
+│   └── ...                       # Full OpenCode repository
 ```
 
 ---
@@ -633,6 +647,7 @@ Nova-AI-Assistant/
 This project integrates multiple open-source components:
 - **WhatsApp MCP**: ISC License - [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp)
 - **Windows MCP**: MIT License - [CursorTouch/Windows-MCP](https://github.com/CursorTouch/Windows-MCP)
+- **OpenCode**: MIT License - [anomalyco/opencode](https://github.com/anomalyco/opencode)
 - **Core Nova Agent**: Proprietary
 
 ---

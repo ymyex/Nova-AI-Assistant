@@ -14,8 +14,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from nova_ai_agent.config import get_settings, Settings
 from nova_ai_agent.exceptions import ConfigurationError, GeminiError, WhatsAppError
 from nova_ai_agent.models import (
-    SuggestionPayload, 
-    SuggestionResponse, 
+    NovaPayload, 
+    NovaResponse, 
     SystemStatus, 
     SessionStatus,
     ActivityLogEntry, 
@@ -27,12 +27,13 @@ from nova_ai_agent.models import (
     CreateDraftRequest,
     EmailListResponse
 )
-from nova_ai_agent.suggestion_service import SuggestionService
+from nova_ai_agent.nova_service import NovaService
 from nova_ai_agent.gemini import GeminiClient
 from nova_ai_agent.whatsapp import WhatsAppClient
 from nova_ai_agent.gmail import GmailClient
+from nova_ai_agent.opencode_client import OpenCodeClient
 
-app = FastAPI(title="Nova WhatsApp Suggestion Agent")
+app = FastAPI(title="Nova AI Assistant")
 
 
 
@@ -49,12 +50,14 @@ app.add_middleware(
 static_path = Path(__file__).parent / "static"
 static_path.mkdir(exist_ok=True)
 
-_service: Optional[SuggestionService] = None
+_service: Optional[NovaService] = None
 _startup_error: Optional[str] = None
 _start_time = time.time()
 _settings: Optional[Settings] = None
 _bridge_process: Optional[subprocess.Popen] = None
+_opencode_process: Optional[subprocess.Popen] = None
 _gmail_client: Optional[GmailClient] = None
+_opencode_client: Optional[OpenCodeClient] = None
 
 def load_env_vars():
     """Load environment variables from .env file"""
@@ -78,7 +81,7 @@ def load_env_vars():
 
 @app.on_event("startup")
 def startup_event() -> None:
-    global _service, _startup_error, _settings, _bridge_process, _gmail_client
+    global _service, _startup_error, _settings, _bridge_process, _gmail_client, _opencode_client
     
     try:
         # Load .env vars manually and update os.environ
@@ -94,7 +97,7 @@ def startup_event() -> None:
 
         gemini_client = GeminiClient(_settings)
         whatsapp_client = WhatsAppClient(_settings)
-        _service = SuggestionService(gemini_client, whatsapp_client)
+        _service = NovaService(gemini_client, whatsapp_client)
         _startup_error = None
         
         # Initialize Gmail client
@@ -113,21 +116,49 @@ def startup_event() -> None:
                 from nova_ai_agent.gmail_tools import GmailAITools
                 gmail_tools = GmailAITools(_gmail_client)
                 _service.set_gmail_tools(gmail_tools)
-                _service._gemini.set_gmail_tools(gmail_tools)
+                _service._gemini.set_tools(gmail_tools)
                 print("Gmail tools connected to AI service (with function calling)")
         except Exception as e:
             print(f"Failed to initialize Gmail client: {e}")
             _gmail_client = None
+        
+        # Initialize OpenCode client for agentic coding
+        try:
+            # Start OpenCode server if auto_start is enabled
+            if _settings.opencode_auto_start:
+                _start_opencode()
+            
+            _opencode_client = OpenCodeClient(base_url=_settings.opencode_base_url)
+            if _service:
+                _service._gemini.set_opencode_client(_opencode_client)
+                print(f"OpenCode client connected (base URL: {_settings.opencode_base_url})")
+        except Exception as e:
+            print(f"Failed to initialize OpenCode client: {e}")
+            _opencode_client = None
 
     except Exception as exc:
         _service = None
         _startup_error = f"{type(exc).__name__}: {str(exc)}"
         print(f"Startup failed: {_startup_error}")
 
+
+
 def _start_bridge():
     global _bridge_process, _settings
     
-    # 1. Cleanup existing processes
+    # 1. Check for existing bridge (Zombie protection)
+    try:
+        # Check if main_v2.exe is already in the process list
+        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq main_v2.exe'], 
+                              capture_output=True, text=True)
+        if "main_v2.exe" in result.stdout:
+            print("Found existing WhatsApp Bridge (main_v2.exe). Skipping startup to avoid duplicates.")
+            print("Note: Bridge logs will not be visible in this window.")
+            return
+    except Exception as e:
+        print(f"Warning: Failed to check for existing bridge: {e}")
+
+    # 2. Cleanup existing processes (if we didn't return above)
     try:
         subprocess.run(["taskkill", "/F", "/IM", "main_v2.exe"], 
                       stdout=subprocess.DEVNULL, 
@@ -151,8 +182,8 @@ def _start_bridge():
                 print(f"Configured bridge to forward messages from group: '{_settings.whatsapp_group_name}'")
             
             # CRITICAL: Tell bridge where the backend is (Port 80 for nova.ai)
-            bridge_env["NOVA_AGENT_URL"] = "http://localhost:80/suggestions"
-            print("Configured bridge to send suggestions to http://localhost:80/suggestions")
+            bridge_env["NOVA_AGENT_URL"] = "http://localhost:80/nova"
+            print("Configured bridge to send messages to http://localhost:80/nova")
             
             _bridge_process = subprocess.Popen(
                 [str(bridge_path)],
@@ -165,6 +196,106 @@ def _start_bridge():
             print(f"WhatsApp Bridge not found at {bridge_path}")
     except Exception as e:
         print(f"Failed to start WhatsApp Bridge: {e}")
+
+
+def _start_opencode():
+    """Start the bundled OpenCode server as a subprocess."""
+    global _opencode_process, _settings
+    
+    if not _settings:
+        print("[OpenCode] Settings not loaded, cannot start OpenCode")
+        return
+    
+    opencode_path = Path(_settings.opencode_path)
+    
+    if not opencode_path.exists():
+        print(f"[OpenCode] OpenCode directory not found at {opencode_path}")
+        return
+    
+    # 1. Check if OpenCode server is already running (via HTTP health check)
+    try:
+        import requests
+        response = requests.get(f"{_settings.opencode_base_url}/app", timeout=2)
+        if response.status_code == 200:
+            print("[OpenCode] Server already running, skipping startup.")
+            return
+    except Exception:
+        pass  # Server not running, will start it
+    
+    # 2. Check if we need to build (node_modules doesn't exist)
+    node_modules = opencode_path / "node_modules"
+    if not node_modules.exists():
+        print("[OpenCode] Building OpenCode (first time setup)...")
+        try:
+            # Run npm install
+            result = subprocess.run(
+                "npm install" if os.name == 'nt' else ["npm", "install"],
+                cwd=str(opencode_path),
+                shell=(os.name == 'nt'),
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout for npm install
+            )
+            if result.returncode != 0:
+                print(f"[OpenCode] npm install failed: {result.stderr[:500]}")
+                return
+            print("[OpenCode] npm install completed successfully")
+            
+            # Run npm run build
+            result = subprocess.run(
+                "npm run build" if os.name == 'nt' else ["npm", "run", "build"],
+                cwd=str(opencode_path),
+                shell=(os.name == 'nt'),
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            if result.returncode != 0:
+                print(f"[OpenCode] npm run build failed: {result.stderr[:500]}")
+                return
+            print("[OpenCode] Build completed successfully")
+        except subprocess.TimeoutExpired:
+            print("[OpenCode] Build timed out (5 minutes)")
+            return
+        except Exception as e:
+            print(f"[OpenCode] Build failed: {e}")
+            return
+    
+    # 3. Start the OpenCode server
+    try:
+        print(f"[OpenCode] Starting server from {opencode_path}...")
+        
+        # Use CREATE_NO_WINDOW on Windows to avoid console popup
+        creation_flags = 0
+        if os.name == 'nt':
+            creation_flags = subprocess.CREATE_NO_WINDOW
+        
+        _opencode_process = subprocess.Popen(
+            "npx opencode serve" if os.name == 'nt' else ["npx", "opencode", "serve"],
+            cwd=str(opencode_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=(os.name == 'nt'),
+            creationflags=creation_flags if os.name == 'nt' else 0
+        )
+        
+        # Wait a moment for server to start
+        time.sleep(3)
+        
+        # Check if process is still running
+        if _opencode_process.poll() is not None:
+            _, stderr = _opencode_process.communicate()
+            print(f"[OpenCode] Server failed to start: {stderr.decode()[:500]}")
+            _opencode_process = None
+            return
+        
+        print(f"[OpenCode] Server started successfully (PID: {_opencode_process.pid})")
+        
+    except FileNotFoundError:
+        print("[OpenCode] npx not found. Ensure Node.js is installed.")
+    except Exception as e:
+        print(f"[OpenCode] Failed to start server: {e}")
+
 
 @app.post("/api/bridge/restart")
 async def restart_bridge():
@@ -184,7 +315,7 @@ async def restart_bridge():
 
 @app.on_event("shutdown")
 def shutdown_event() -> None:
-    global _bridge_process
+    global _bridge_process, _opencode_process
     if _bridge_process:
         print("Stopping WhatsApp Bridge...")
         _bridge_process.terminate()
@@ -192,6 +323,14 @@ def shutdown_event() -> None:
             _bridge_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             _bridge_process.kill()
+    
+    if _opencode_process:
+        print("Stopping OpenCode server...")
+        _opencode_process.terminate()
+        try:
+            _opencode_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _opencode_process.kill()
 
 @app.get("/api/status", response_model=SystemStatus)
 async def get_status():
@@ -323,7 +462,7 @@ async def update_config(payload: ConfigUpdate):
             try:
                 gemini_client = GeminiClient(_settings)
                 whatsapp_client = WhatsAppClient(_settings)
-                _service = SuggestionService(gemini_client, whatsapp_client)
+                _service = NovaService(gemini_client, whatsapp_client)
                 
                 # Reconnect Gmail tools if available
                 if _gmail_client:
@@ -364,17 +503,17 @@ async def whatsapp_unpair(session: str):
         raise HTTPException(status_code=502, detail="Failed to trigger WhatsApp unpairing")
     return {"message": f"Unpairing triggered for {session}"}
 
-@app.post("/suggestions", response_model=SuggestionResponse, status_code=status.HTTP_201_CREATED)
-async def create_suggestion(payload: SuggestionPayload) -> SuggestionResponse:
+@app.post("/nova", response_model=NovaResponse, status_code=status.HTTP_201_CREATED)
+async def create_response(payload: NovaPayload) -> NovaResponse:
     if _startup_error:
         raise HTTPException(status_code=500, detail=f"Service misconfigured: {_startup_error}")
 
     if _service is None:
-        raise HTTPException(status_code=503, detail="Suggestion service not ready")
+        raise HTTPException(status_code=503, detail="Nova service not ready")
 
     try:
         result = await run_in_threadpool(_service.generate_and_send, payload)
-        return SuggestionResponse(success=True, result=result)
+        return NovaResponse(success=True, result=result)
     except ConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     except GeminiError as exc:
