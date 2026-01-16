@@ -14,13 +14,17 @@ func main() {
 		"replying":   NewSession("replying"),
 	}
 
+	// Store references to sessions for cross-verification
+	SetMonitoringSession(sessions["monitoring"])
+	SetReplyingSession(sessions["replying"])
+
 	// Initialize each session
 	for name, s := range sessions {
 		if err := s.Initialize(); err != nil {
 			fmt.Printf("Failed to initialize session %s: %v\n", name, err)
 			return
 		}
-		
+
 		// Register handlers
 		RegisterHandlers(s)
 	}

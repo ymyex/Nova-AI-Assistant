@@ -113,6 +113,35 @@ class GmailClient:
         
         return False
     
+    def refresh_if_needed(self) -> bool:
+        """
+        Refresh the access token if it's expired but we have a valid refresh_token.
+        
+        This method should be called proactively before checking authentication status
+        or performing Gmail operations to ensure the token stays valid.
+        
+        Returns:
+            True if credentials are valid (or were just refreshed successfully)
+        """
+        if self.creds is None:
+            return False
+        
+        if self.creds.valid:
+            return True
+        
+        if self.creds.expired and self.creds.refresh_token:
+            print(f"Gmail access token expired (was valid until {self.creds.expiry}), proactively refreshing...")
+            success = self._try_refresh_token()
+            if success:
+                self._save_token()
+                self._build_service()
+                print(f"Gmail token refreshed successfully (now valid until {self.creds.expiry})")
+                return True
+            else:
+                print("Gmail proactive token refresh failed - re-authentication may be required")
+        
+        return False
+    
     def _save_token(self) -> None:
         """Save the current credentials to token file."""
         if self.creds:
@@ -268,6 +297,9 @@ class GmailClient:
         Returns:
             Dict with 'messages' list and optional 'nextPageToken'
         """
+        # Proactively refresh token if expired
+        self.refresh_if_needed()
+        
         if not self.service:
             return {"messages": [], "error": "Not authenticated"}
         
@@ -313,6 +345,9 @@ class GmailClient:
         Returns:
             Message dict with parsed fields
         """
+        # Proactively refresh token if expired
+        self.refresh_if_needed()
+        
         if not self.service:
             return None
         
@@ -397,6 +432,9 @@ class GmailClient:
         Returns:
             Sent message info or None on failure
         """
+        # Proactively refresh token if expired
+        self.refresh_if_needed()
+        
         if not self.service:
             return None
         

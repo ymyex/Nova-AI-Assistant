@@ -1,87 +1,133 @@
 import React from 'react';
-import { LayoutDashboard, Settings, Zap } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { LayoutDashboard, Settings, MessageSquare, Terminal, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { ConversationList } from '../Chat/ConversationList';
+import type { ConversationListItem } from '../../types/chat';
+import './Sidebar.css';
 
 interface SidebarProps {
-    activeTab: 'dashboard' | 'setup';
-    setActiveTab: (tab: 'dashboard' | 'setup') => void;
+    activeTab: 'dashboard' | 'setup' | 'chat';
+    setActiveTab: (tab: 'dashboard' | 'setup' | 'chat') => void;
+    isCollapsed?: boolean;
+    onToggleCollapse?: () => void;
+    conversations?: ConversationListItem[];
+    activeConversationId?: string | null;
+    onSelectConversation?: (id: string) => void;
+    onNewChat?: () => void;
+    onDeleteChat?: (id: string) => void;
+    onRenameChat?: (id: string, title: string) => void;
+    onDeleteAllChats?: () => void;
+    isLoadingConversations?: boolean;
+    pendingNewChat?: boolean;
+    hasActiveMessages?: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-    const navItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-        { id: 'setup', label: 'Device Setup', icon: <Settings size={20} /> },
-    ];
+const navItems = [
+    { id: 'dashboard', label: 'Monitor', icon: LayoutDashboard },
+    { id: 'chat', label: 'Neural Link', icon: MessageSquare },
+    { id: 'setup', label: 'Configuration', icon: Settings },
+] as const;
+
+export const Sidebar: React.FC<SidebarProps> = ({
+    activeTab,
+    setActiveTab,
+    isCollapsed = false,
+    onToggleCollapse,
+    conversations = [],
+    activeConversationId = null,
+    onSelectConversation,
+    onNewChat,
+    onDeleteChat,
+    onRenameChat,
+    onDeleteAllChats,
+    isLoadingConversations = false,
+    pendingNewChat = false,
+    hasActiveMessages = false
+}) => {
+    // Only show conversations section when expanded AND on chat tab
+    const showConversations = activeTab === 'chat' && !isCollapsed;
 
     return (
-        <motion.aside
-            initial={{ x: -50, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            style={{
-                width: '280px',
-                background: 'rgba(15, 23, 42, 0.6)',
-                backdropFilter: 'blur(20px)',
-                borderRight: '1px solid var(--glass-border)',
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '2rem',
-                zIndex: 50
-            }}
-        >
-            <div style={{ marginBottom: '3rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <img src="./logo.png" alt="Nova Logo" style={{ width: '64px', height: '64px', objectFit: 'contain' }} />
-                <div>
-                    <h1 className="text-gradient" style={{ fontSize: '1.75rem', fontWeight: 800, lineHeight: 1 }}>Nova AI</h1>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.25rem' }}>Web Console</p>
+        <aside className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''}`}>
+            {/* Header with Logo and Toggle */}
+            <div className="sidebar__header">
+                <div className="sidebar__logo">
+                    <div className="sidebar__logo-icon">
+                        <div className="sidebar__logo-glow" />
+                        <img src="./logo.png" alt="Nova" />
+                    </div>
+                    <div className="sidebar__logo-text">
+                        <h1>NOVA</h1>
+                        <p>System</p>
+                    </div>
                 </div>
+                <button
+                    className="sidebar__toggle"
+                    onClick={onToggleCollapse}
+                    aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                    {isCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+                </button>
             </div>
 
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-                {navItems.map((item) => (
-                    <motion.button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id as 'dashboard' | 'setup')}
-                        whileHover={{ x: 5 }}
-                        whileTap={{ scale: 0.98 }}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '1rem',
-                            padding: '1rem',
-                            borderRadius: 'var(--radius-md)',
-                            background: activeTab === item.id ? 'var(--primary-glow)' : 'transparent',
-                            border: activeTab === item.id ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
-                            color: activeTab === item.id ? 'var(--primary)' : 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            fontWeight: 500,
-                            transition: 'all 0.2s',
-                            textAlign: 'left'
-                        }}
-                    >
-                        {item.icon}
-                        {item.label}
-                    </motion.button>
-                ))}
+            {/* Navigation */}
+            <nav className="sidebar__nav">
+                {navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                        <div key={item.id} className="sidebar__nav-item-wrapper">
+                            <button
+                                className={`sidebar__nav-item ${isActive ? 'sidebar__nav-item--active' : ''}`}
+                                onClick={() => setActiveTab(item.id as 'dashboard' | 'setup' | 'chat')}
+                            >
+                                {isActive && <div className="sidebar__nav-indicator" />}
+                                <Icon size={20} className="sidebar__nav-icon" />
+                                <span className="sidebar__nav-label">{item.label}</span>
+                            </button>
+                            <div className="sidebar__tooltip">{item.label}</div>
+                        </div>
+                    );
+                })}
             </nav>
 
-            <div style={{ marginTop: 'auto' }}>
-                <div style={{
-                    padding: '1rem',
-                    background: 'rgba(56, 189, 248, 0.05)',
-                    borderRadius: 'var(--radius-md)',
-                    marginBottom: '1rem',
-                    border: '1px solid rgba(56, 189, 248, 0.1)'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--primary)', fontSize: '0.875rem' }}>
-                        <Zap size={16} />
-                        <span>System Online</span>
+            {/* Conversation List - Only when expanded and on chat tab */}
+            {showConversations && (
+                <div className="sidebar__conversations">
+                    <ConversationList
+                        conversations={conversations}
+                        activeId={activeConversationId}
+                        onSelect={onSelectConversation || (() => {})}
+                        onNewChat={onNewChat || (() => {})}
+                        onDelete={onDeleteChat || (() => {})}
+                        onRename={onRenameChat || (() => {})}
+                        onDeleteAll={onDeleteAllChats}
+                        isLoading={isLoadingConversations}
+                        hasMessages={hasActiveMessages}
+                        isCollapsed={false}
+                        pendingNewChat={pendingNewChat}
+                    />
+                </div>
+            )}
+
+            {/* Spacer */}
+            <div className="sidebar__spacer" />
+
+            {/* Status Footer */}
+            <div className="sidebar__footer">
+                <div className="sidebar__status">
+                    <div className="sidebar__status-indicator">
+                        <span className="sidebar__status-dot" />
+                        <span className="sidebar__status-pulse" />
                     </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem', paddingLeft: '1.75rem' }}>
-                        All systems nominal.
-                    </p>
+                    <div className="sidebar__status-content">
+                        <span className="sidebar__status-text">ONLINE</span>
+                        <div className="sidebar__connection">
+                            <Terminal size={11} />
+                            <span>Connected to Core</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </motion.aside>
+        </aside>
     );
 };
-

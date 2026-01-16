@@ -51,10 +51,10 @@ class GmailAITools:
             
             lines = [f"📬 *Recent Emails ({len(messages)})*\n"]
             for i, msg in enumerate(messages, 1):
-                subject = msg.get("subject", "(No subject)")[:50]
-                sender = msg.get("from", "Unknown")[:30]
-                snippet = msg.get("snippet", "")[:60]
-                date = msg.get("date", "")[:20]
+                subject = msg.get("subject", "(No subject)")
+                sender = msg.get("from", "Unknown")
+                snippet = msg.get("snippet", "")
+                date = msg.get("date", "")
                 
                 lines.append(f"{i}. *{subject}*")
                 lines.append(f"   From: {sender}")
@@ -79,9 +79,9 @@ class GmailAITools:
             
             lines = [f"🔍 *Search Results for '{query}' ({len(messages)})*\n"]
             for i, msg in enumerate(messages, 1):
-                subject = msg.get("subject", "(No subject)")[:50]
-                sender = msg.get("from", "Unknown")[:30]
-                snippet = msg.get("snippet", "")[:60]
+                subject = msg.get("subject", "(No subject)")
+                sender = msg.get("from", "Unknown")
+                snippet = msg.get("snippet", "")
                 
                 lines.append(f"{i}. *{subject}*")
                 lines.append(f"   From: {sender}")
@@ -108,9 +108,7 @@ class GmailAITools:
             date = msg.get("date", "Unknown")
             body = msg.get("body", msg.get("snippet", "(No content)"))
             
-            # Truncate body if too long
-            if len(body) > 1000:
-                body = body[:1000] + "...\n[Truncated]"
+            # Return full body - no truncation
             
             return (
                 f"📧 *Email Details*\n\n"
@@ -182,7 +180,7 @@ class GmailAITools:
                 return "📁 No labels found."
             
             label_names = [l["name"] for l in labels]
-            return f"📁 *Gmail Labels:*\n" + "\n".join(f"• {name}" for name in label_names[:20])
+            return f"📁 *Gmail Labels:*\n" + "\n".join(f"• {name}" for name in label_names)
         except Exception as e:
             return f"❌ Failed to get labels: {str(e)}"
     
@@ -288,12 +286,12 @@ class GmailAITools:
             
             if include_recent and unread_count > 0:
                 # Get recent unread subjects
-                messages = unread_result.get("messages", [])[:3]
+                messages = unread_result.get("messages", [])
                 if messages:
                     summaries = []
                     for msg in messages:
-                        subj = msg.get("subject", "No subject")[:40]
-                        sender = msg.get("from", "Unknown")[:25]
+                        subj = msg.get("subject", "No subject")
+                        sender = msg.get("from", "Unknown")
                         summaries.append(f"- {subj} (from {sender})")
                     context_parts.append("Recent unread:\n" + "\n".join(summaries))
             

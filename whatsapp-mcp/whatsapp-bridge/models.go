@@ -62,7 +62,7 @@ type suggestionMessage struct {
     ChatJID     string                     `json:"chat_jid,omitempty"`
     SenderName  string                     `json:"sender_name,omitempty"`
     SenderJID   string                     `json:"sender_jid,omitempty"`
-    SenderPhone string                     `json:"sender_phone,omitempty"`
+    SenderID    string                     `json:"sender_id,omitempty"` // User part of JID (phone or LID)
     Text        string                     `json:"text"`
     MediaType   string                     `json:"media_type,omitempty"`
     Context     []suggestionContextMessage `json:"context,omitempty"`

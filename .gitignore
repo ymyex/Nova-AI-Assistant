@@ -182,5 +182,13 @@ ipython_config.py
 sandbox/
 *.mcpb
 
+# =====================================================
+# LARGE MEDIA FILES
+# =====================================================
+*.mov
+*.mp4
+*.avi
+*.mkv
+
 # UV lock files (optional - some projects commit these)
 # uv.lock

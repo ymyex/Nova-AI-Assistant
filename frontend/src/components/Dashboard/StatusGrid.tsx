@@ -1,23 +1,52 @@
 import React from 'react';
 import { GlassCard } from '../Shared/GlassCard';
-import { Brain, MessageSquare, Activity, CheckCircle2 } from 'lucide-react';
-
-interface SessionStatus {
-    connected: boolean;
-}
-
-interface SystemStatus {
-    uptime_seconds: number;
-    gemini_connected: boolean;
-    monitoring: SessionStatus;
-    replying: SessionStatus;
-    total_suggestions: number;
-    failed_suggestions: number;
-}
+import { Brain, MessageSquare, Activity, CheckCircle2, Wifi, Zap } from 'lucide-react';
+import type { SystemStatus } from '../../types';
 
 interface StatusGridProps {
     status: SystemStatus | null;
 }
+
+interface StatusItemProps {
+    label: string;
+    value: string | number;
+    icon: React.ElementType;
+    color: string;
+    subtext?: string;
+}
+
+const StatusItem: React.FC<StatusItemProps> = ({ label, value, icon: Icon, color, subtext }) => (
+    <GlassCard hoverEffect style={{ height: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+            <div style={{
+                padding: '0.75rem',
+                borderRadius: '12px',
+                background: `rgba(${color}, 0.1)`,
+                color: `rgb(${color})`
+            }}>
+                <Icon size={24} />
+            </div>
+            {subtext && (
+                <span style={{
+                    fontSize: '0.75rem',
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '99px',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-muted)',
+                    border: '1px solid var(--glass-border)'
+                }}>
+                    {subtext}
+                </span>
+            )}
+        </div>
+        <div>
+            <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{label}</h4>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+                {value || '---'}
+            </div>
+        </div>
+    </GlassCard>
+);
 
 export const StatusGrid: React.FC<StatusGridProps> = ({ status }) => {
     const formatUptime = (seconds: number) => {
@@ -32,62 +61,50 @@ export const StatusGrid: React.FC<StatusGridProps> = ({ status }) => {
         : 100;
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">System Uptime</span>
-                    <Activity size={20} color="var(--primary)" />
-                </div>
-                <div className="metric-value">{status ? formatUptime(status.uptime_seconds) : '---'}</div>
-            </GlassCard>
+        <div className="dashboard-grid">
+            <StatusItem
+                label="System Uptime"
+                value={status ? formatUptime(status.uptime_seconds) : '---'}
+                icon={Activity}
+                color="56, 189, 248" // Sky
+                subtext="Session Active"
+            />
 
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">AI Status</span>
-                    <Brain size={20} color={status?.gemini_connected ? 'var(--success)' : 'var(--danger)'} />
-                </div>
-                <div className="metric-value" style={{ color: status?.gemini_connected ? 'var(--success)' : 'var(--danger)' }}>
-                    {status?.gemini_connected ? 'ONLINE' : 'OFFLINE'}
-                </div>
-            </GlassCard>
+            <StatusItem
+                label="Neural Core Status"
+                value={status?.gemini_connected ? 'ONLINE' : 'OFFLINE'}
+                icon={Brain}
+                color={status?.gemini_connected ? '74, 222, 128' : '239, 68, 68'} // Green or Red
+                subtext="Gemini"
+            />
 
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">WhatsApp (Monitor)</span>
-                    <MessageSquare size={20} color={status?.monitoring?.connected ? 'var(--secondary)' : 'var(--warning)'} />
-                </div>
-                <div className="metric-value" style={{ color: status?.monitoring?.connected ? 'var(--secondary)' : 'var(--text-muted)' }}>
-                    {status?.monitoring?.connected ? 'CONNECTED' : 'OFFLINE'}
-                </div>
-            </GlassCard>
+            <StatusItem
+                label="WhatsApp Monitoring"
+                value={status?.monitoring?.connected ? 'ACTIVE' : 'DISCONNECTED'}
+                icon={Wifi}
+                color={status?.monitoring?.connected ? '99, 102, 241' : '245, 158, 11'} // Indigo or Amber
+            />
 
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">WhatsApp (Agent)</span>
-                    <MessageSquare size={20} color={status?.replying?.connected ? 'var(--success)' : 'var(--warning)'} />
-                </div>
-                <div className="metric-value" style={{ color: status?.replying?.connected ? 'var(--success)' : 'var(--text-muted)' }}>
-                    {status?.replying?.connected ? 'CONNECTED' : 'OFFLINE'}
-                </div>
-            </GlassCard>
+            <StatusItem
+                label="Agent Response"
+                value={status?.replying?.connected ? 'ACTIVE' : 'PAUSED'}
+                icon={Zap}
+                color={status?.replying?.connected ? '74, 222, 128' : '245, 158, 11'}
+            />
 
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">Total Suggestions</span>
-                    <MessageSquare size={20} color="var(--secondary)" />
-                </div>
-                <div className="metric-value">{status?.total_suggestions ?? 0}</div>
-            </GlassCard>
+            <StatusItem
+                label="Total Interactions"
+                value={status?.total_suggestions ?? 0}
+                icon={MessageSquare}
+                color="168, 85, 247" // Purple
+            />
 
-            <GlassCard hoverEffect>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <span className="metric-label">Success Rate</span>
-                    <CheckCircle2 size={20} color="var(--success)" />
-                </div>
-                <div className="metric-value">
-                    {accuracy}%
-                </div>
-            </GlassCard>
+            <StatusItem
+                label="Response Accuracy"
+                value={`${accuracy}%`}
+                icon={CheckCircle2}
+                color="74, 222, 128"
+            />
         </div>
     );
 };

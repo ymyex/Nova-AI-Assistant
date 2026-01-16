@@ -127,7 +127,7 @@ Python package containing all business logic.
 - `config.py` - Configuration management via environment variables
 - `gemini.py` - `GeminiClient` for AI response generation
 - `whatsapp.py` - `WhatsAppClient` for dual-session WhatsApp interactions
-- `suggestion_service.py` - Orchestrates AI generation and message delivery
+- `nova_service.py` - Orchestrates AI generation and message delivery
 - `models.py` - Pydantic models including `SessionStatus` for dual sessions
 - `exceptions.py` - Custom error handling
 
@@ -138,7 +138,7 @@ Go-based bridge managing two independent WhatsApp connections.
 **Architecture:**
 - `main.go` - Initializes and manages both sessions
 - `session.go` - Session struct for encapsulating client state
-- `handlers.go` - Event handlers for messages, connection events
+- `handlers.go` - Event handlers for messages, connection events, identity resolution
 - `server.go` - REST API with session-aware endpoints
 - `db.go` - Message storage logic
 - `utils.go` - Helper functions
@@ -166,7 +166,7 @@ Bundled coding agent for autonomous file operations and coding tasks.
 - **Auto-starts** on backend launch (Port 4096)
 - **Bundled Source**: Full TypeScript source included in `opencode/`
 - **Zero Config**: No separate installation required
-- **First Run**: Automatically builds dependencies (`npm install && npm run build`) on first startup
+- **First Run**: Automatically builds dependencies (`bun install && bun run build`) on first startup
 
 ### 4. Web Frontend (`frontend/src/`)
 
@@ -267,7 +267,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 # Optional with Defaults
 GEMINI_MODEL=gemini-3-flash-preview
-WHATSAPP_BRIDGE_BASE_URL=http://localhost:8080/api
+WHATSAPP_BRIDGE_URL=http://localhost:8080/api
 WHATSAPP_GROUP_NAME=Nova
 WHATSAPP_GROUP_JID=           # Auto-resolved if not set
 WHATSAPP_DB_PATH=             # Auto-detected
@@ -317,6 +317,23 @@ Both sessions can be in one of these states:
 - **Paired but Disconnected**: Authentication valid, connection lost
 - **Not Paired**: Needs QR code scanning
 - **Connecting**: Attempting to establish connection
+
+### Identity Resolution (JID vs LID)
+
+WhatsApp uses two identifier formats that the system handles automatically:
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| **Phone-based JID** | `96560979542@s.whatsapp.net` | Traditional format using phone number |
+| **LID (Linked ID)** | `216299418435789@lid` | Privacy-preserving opaque identifier |
+
+**How it works:**
+- When monitoring session connects via QR code, its identity is auto-detected from `Client.Store.ID`
+- Messages may arrive with sender as LID even if monitoring uses phone-based JID
+- The system resolves this using `msg.Info.SenderAlt` (contains phone when sender is LID)
+- Fallback: `client.Store.LIDs.GetPNForLID()` for LID-to-phone resolution
+
+**No configuration required** - identity detection happens at connection time with no caching from messages.
 
 ---
 
@@ -602,7 +619,7 @@ Nova-AI-Assistant/
 │   ├── config.py                 # Settings
 │   ├── gemini.py                 # AI client
 │   ├── whatsapp.py               # Dual-session WhatsApp client
-│   ├── suggestion_service.py    # Orchestration
+│   ├── nova_service.py          # Orchestration
 │   ├── models.py                 # SessionStatus, SystemStatus
 │   └── exceptions.py             # Custom errors
 │
@@ -623,8 +640,7 @@ Nova-AI-Assistant/
     └── whatsapp-bridge/          # Go bridge
         ├── main.go               # Session initialization
         ├── session.go            # Session struct & methods
-        ├── handlers.go           # Event handling
-        ├── server.go             # REST API
+        ├── handlers.go           # Event handling, JID/LID resolution
         ├── server.go             # REST API
         ├── db.go                 # Message storage
         ├── utils.go              # Helpers

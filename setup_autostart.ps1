@@ -1,12 +1,32 @@
+# Run this script as Administrator to set up the scheduled task
 $taskName = "StartNovaBackend"
 $vbsPath = "c:\Users\ymyex\Projects\Nova-AI-Assistant\run_silent.vbs"
-$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsPath`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
 
+Write-Host "Setting up Nova Backend scheduled task..." -ForegroundColor Cyan
+
+# Remove existing task if present
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+
+# Create action
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsPath`""
+
+# Single trigger: At system startup
+$trigger = New-ScheduledTaskTrigger -AtStartup
+
+# Create principal (run as SYSTEM at boot with highest privileges)
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+# Settings: Don't stop on battery, no time limit, ignore new instances if already running
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -StartWhenAvailable
+
+# Register task
 Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -TaskName $taskName -Description "Auto-start Nova AI Assistant Backend" -Force
 
-Write-Host "Scheduled Task '$taskName' created successfully."
-Write-Host "The backend will now start automatically when you log in."
-Pause
+Write-Host ""
+Write-Host "SUCCESS! Task '$taskName' created with:" -ForegroundColor Green
+Write-Host "  - AtStartup trigger (runs when Windows boots)" -ForegroundColor White
+Write-Host "  - Runs as SYSTEM (no login required)" -ForegroundColor White
+Write-Host "  - MultipleInstances: IgnoreNew (prevents duplicates)" -ForegroundColor White
+Write-Host ""
+Write-Host "Press Enter to close..." -ForegroundColor Gray
+Read-Host

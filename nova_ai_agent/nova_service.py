@@ -86,7 +86,7 @@ class NovaService:
         entry = ActivityLogEntry(
             timestamp=datetime.now(),
             message_text=message_text,
-            sender=payload.message.sender_name or payload.message.sender_phone or "Unknown",
+            sender=payload.message.sender_name or payload.message.sender_id or payload.message.sender_phone or "Unknown",
             status="pending"
         )
         self.logs.append(entry)
@@ -211,8 +211,13 @@ class NovaService:
                     raise GeminiError("Gemini returned an empty response")
             
             entry.suggestion = response_text
-            override_group = payload.force_group_name or payload.message.chat_name
-            group_jid, delivered, detail = self._whatsapp.send_suggestion(response_text, override_group)
+            # For private chat, reply directly to the chat JID (sender's private chat)
+            # The chat_jid is the private conversation between the two numbers
+            recipient_jid = payload.message.chat_jid
+            if not recipient_jid:
+                raise WhatsAppError("No chat JID available to send response")
+
+            delivered, detail = self._whatsapp.send_message(recipient_jid, response_text, session="replying")
 
             if not delivered:
                 raise WhatsAppError(detail or "WhatsApp bridge reported a failure while sending the message")
@@ -222,7 +227,7 @@ class NovaService:
 
             return NovaResult(
                 response=response_text,
-                group_jid=group_jid,
+                group_jid=recipient_jid,  # Now contains private chat JID
                 delivered=delivered,
                 details=detail or "Delivery confirmed",
             )

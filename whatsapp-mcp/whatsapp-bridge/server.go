@@ -18,20 +18,40 @@ func startRESTServer(sessions map[string]*Session, port int) {
 	// Status Handler
 	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		status := make(map[string]interface{})
 		for name, s := range sessions {
 			s.mu.RLock()
-			status[name] = map[string]interface{}{
+			sessionStatus := map[string]interface{}{
 				"paired":     s.IsPaired,
 				"connected":  s.Client.IsConnected(),
 				"connecting": s.IsConnecting,
 			}
+
+			// Include identity information if connected
+			if s.Client != nil && s.Client.Store != nil && s.Client.Store.ID != nil {
+				deviceID := s.Client.Store.ID
+				sessionStatus["jid"] = deviceID.String()
+				sessionStatus["user"] = deviceID.User
+				sessionStatus["server"] = deviceID.Server
+
+				// If the server is "lid", the user field is a LID, not a phone
+				// Try to get actual phone number from PNJid if available
+				if deviceID.Server == "lid" {
+					sessionStatus["is_lid"] = true
+					// For LID-based accounts, we need to get the phone from elsewhere
+					// The PNJid (phone number JID) may be available in some cases
+					sessionStatus["phone"] = "" // Will be populated by identity resolution
+				} else {
+					sessionStatus["is_lid"] = false
+					sessionStatus["phone"] = deviceID.User
+				}
+			}
+
 			s.mu.RUnlock()
+			status[name] = sessionStatus
 		}
-		
-		// Legacy flattened for single-session consumers (if any)? 
-		// Actually, we should probably stick to the new structure.
+
 		json.NewEncoder(w).Encode(status)
 	})
 

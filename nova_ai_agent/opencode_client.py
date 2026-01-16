@@ -10,6 +10,20 @@ import json
 import subprocess
 import time
 import os
+import logging
+import traceback
+from datetime import datetime
+
+# Configure OpenCode logger
+logger = logging.getLogger("OpenCode")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s [%(name)s %(levelname)s] %(message)s',
+        datefmt='%H:%M:%S'
+    ))
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG for detailed diagnostics
 
 try:
     from opencode_ai import Opencode
@@ -38,17 +52,23 @@ class OpenCodeClient:
         self._is_connected = False
         self._server_process: Optional[subprocess.Popen] = None
         self._current_project_path: Optional[str] = None
+        self._init_time = datetime.now()
+        self._last_request_time: Optional[datetime] = None
+        self._request_count = 0
+        
+        logger.info(f"Initializing OpenCode client (base_url={base_url})")
         
         if not OPENCODE_AVAILABLE:
-            print("[OpenCode] SDK not installed. Install with: pip install --pre opencode-ai")
+            logger.error("SDK not installed. Install with: pip install --pre opencode-ai")
             return
             
         try:
             self._client = Opencode(base_url=base_url)
             self._is_connected = True
-            print(f"[OpenCode] Client initialized with base URL: {base_url}")
+            logger.info(f"Client initialized successfully (base_url={base_url})")
         except Exception as e:
-            print(f"[OpenCode] Failed to initialize client: {e}")
+            logger.error(f"Failed to initialize client: {e}")
+            logger.debug(f"Initialization traceback:\n{traceback.format_exc()}")
             self._is_connected = False
 
     # ==================== Server Management ====================
@@ -63,8 +83,17 @@ class OpenCodeClient:
         Returns:
             JSON string with status or error message
         """
+        start_time = datetime.now()
+        logger.info(f"=== START SERVER REQUEST ===")
+        logger.info(f"Project path: {project_path}")
+        logger.info(f"Wait seconds: {wait_seconds}")
+        logger.debug(f"Current state: is_connected={self._is_connected}, "
+                    f"has_process={self._server_process is not None}, "
+                    f"current_path={self._current_project_path}")
+        
         # Validate path exists
         if not os.path.isdir(project_path):
+            logger.error(f"Directory does not exist: {project_path}")
             return json.dumps({
                 "success": False,
                 "error": f"Directory does not exist: {project_path}"
@@ -72,22 +101,52 @@ class OpenCodeClient:
         
         # Stop any existing server first
         if self._server_process:
+            logger.info("Stopping existing server before starting new one")
             self.stop_server()
             time.sleep(1)
         
         try:
-            # Start opencode serve in the project directory
-            print(f"[OpenCode] Starting server on: {project_path}")
+            logger.info(f"Starting OpenCode server on: {project_path}")
             
             # Use CREATE_NO_WINDOW on Windows to avoid console popup
             creation_flags = 0
             if os.name == 'nt':
                 creation_flags = subprocess.CREATE_NO_WINDOW
             
-            # Use shell=True on Windows to find opencode.cmd via PATH
+            # Determine path to local OpenCode source
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(script_dir)
+            opencode_package_dir = os.path.join(project_root, "opencode", "packages", "opencode")
+            opencode_src_path = os.path.join(opencode_package_dir, "src", "index.ts")
+
+            # Default to global opencode command
+            command = ["opencode", "serve"]
+            # Directory to run the command from (where bunfig.toml is located)
+            run_cwd = project_path
+            
+            if os.path.exists(opencode_src_path):
+                logger.info(f"Using local source: {opencode_src_path}")
+                logger.debug(f"OpenCode package dir: {opencode_package_dir}")
+                # Must run from the opencode package directory for bunfig.toml to be read
+                # (required for @opentui/solid preload which sets up JSX runtime)
+                command = ["bun", "run", "--conditions=browser", opencode_src_path, "serve"]
+                run_cwd = opencode_package_dir
+            else:
+                logger.info("Local source not found, falling back to global command")
+
+            logger.debug(f"Command: {command}")
+            logger.debug(f"Working directory: {run_cwd}")
+
+            # Prepare command for subprocess
+            if os.name == 'nt':
+                # On Windows with shell=True, passing a string is often more reliable
+                cmd_arg = subprocess.list2cmdline(command)
+            else:
+                cmd_arg = command
+
             self._server_process = subprocess.Popen(
-                "opencode serve" if os.name == 'nt' else ["opencode", "serve"],
-                cwd=project_path,
+                cmd_arg,
+                cwd=run_cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=(os.name == 'nt'),
@@ -95,36 +154,84 @@ class OpenCodeClient:
             )
             
             self._current_project_path = project_path
+            logger.info(f"Server process started (PID: {self._server_process.pid})")
             
-            # Wait for server to start
-            print(f"[OpenCode] Waiting {wait_seconds} seconds for server to start...")
-            time.sleep(wait_seconds)
+            # Poll for server readiness with retries instead of fixed wait
+            max_wait_seconds = 30
+            poll_interval = 1.0
+            logger.info(f"Waiting up to {max_wait_seconds}s for server to become ready...")
             
-            # Check if process is still running
-            if self._server_process.poll() is not None:
-                # Process ended, get error
-                _, stderr = self._server_process.communicate()
-                return json.dumps({
-                    "success": False,
-                    "error": f"Server failed to start: {stderr.decode()[:500]}"
-                })
+            server_ready = False
+            health_msg = "Unknown"
+            for attempt in range(int(max_wait_seconds / poll_interval)):
+                time.sleep(poll_interval)
+                
+                # Check if process is still running
+                poll_result = self._server_process.poll()
+                if poll_result is not None:
+                    # Process ended, get error
+                    _, stderr = self._server_process.communicate()
+                    error_msg = stderr.decode()[:500]
+                    logger.error(f"Server process exited with code {poll_result}")
+                    logger.error(f"Server stderr: {error_msg}")
+                    return json.dumps({
+                        "success": False,
+                        "error": f"Server failed to start: {error_msg}"
+                    })
+                
+                # Try health check
+                health_ok, health_msg = self._check_server_health(timeout=2)
+                if health_ok:
+                    logger.info(f"Server ready after {(attempt + 1) * poll_interval:.1f}s: {health_msg}")
+                    server_ready = True
+                    break
+                else:
+                    logger.debug(f"Attempt {attempt + 1}: Server not ready - {health_msg}")
+            
+            if not server_ready:
+                logger.warning(f"Server may still be initializing after {max_wait_seconds}s")
+                health_msg = f"Server started but health check not passing after {max_wait_seconds}s"
+            
+            logger.debug("Reinitializing client with project directory header...")
             
             # Reinitialize the client to connect to the new server
+            # CRITICAL: Pass the target project directory via x-opencode-directory header
+            # This ensures OpenCode analyzes the correct project regardless of where the
+            # server process is running (which may be in opencode package dir for local source)
             try:
-                self._client = Opencode(base_url=self._base_url)
+                logger.debug(f"Creating new Opencode client with directory header: {project_path}")
+                self._client = Opencode(
+                    base_url=self._base_url,
+                    default_headers={"x-opencode-directory": project_path}
+                )
                 self._is_connected = True
+                logger.info("Client reinitialized with project directory header")
             except Exception as e:
+                logger.error(f"Client reinitialization failed: {e}")
+                logger.debug(f"Traceback:\n{traceback.format_exc()}")
                 return json.dumps({
                     "success": False,
                     "error": f"Server started but client failed to connect: {str(e)}"
                 })
+            
+            # Verify server is actually responding with health check
+            health_ok, health_msg = self._check_server_health()
+            if not health_ok:
+                logger.warning(f"Server health check failed: {health_msg}")
+                # Don't fail, but log the warning - server might still be initializing
+            else:
+                logger.info(f"Server health check passed: {health_msg}")
+            
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"=== SERVER STARTED SUCCESSFULLY (took {elapsed:.2f}s) ===")
             
             return json.dumps({
                 "success": True,
                 "message": f"OpenCode server started on {project_path}",
                 "project_path": project_path,
                 "base_url": self._base_url,
-                "pid": self._server_process.pid
+                "pid": self._server_process.pid,
+                "health_check": health_msg
             }, indent=2)
             
         except FileNotFoundError:
@@ -144,7 +251,10 @@ class OpenCodeClient:
         Returns:
             JSON string with status
         """
+        logger.info("=== STOP SERVER REQUEST ===")
+        
         if not self._server_process:
+            logger.info("No server process to stop")
             return json.dumps({
                 "success": True,
                 "message": "No server is currently running."
@@ -154,18 +264,22 @@ class OpenCodeClient:
             project_path = self._current_project_path
             pid = self._server_process.pid
             
+            logger.info(f"Stopping server (PID: {pid}, project: {project_path})")
+            
             # Terminate the process
             self._server_process.terminate()
             try:
                 self._server_process.wait(timeout=5)
+                logger.debug("Server process terminated gracefully")
             except subprocess.TimeoutExpired:
+                logger.warning("Server did not terminate gracefully, killing...")
                 self._server_process.kill()
             
             self._server_process = None
             self._current_project_path = None
             self._is_connected = False
             
-            print(f"[OpenCode] Server stopped (was on: {project_path})")
+            logger.info(f"Server stopped successfully (was on: {project_path})")
             
             return json.dumps({
                 "success": True,
@@ -173,6 +287,8 @@ class OpenCodeClient:
                 "previous_project": project_path
             })
         except Exception as e:
+            logger.error(f"Error stopping server: {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
             return json.dumps({
                 "success": False,
                 "error": f"Error stopping server: {str(e)}"
@@ -209,10 +325,95 @@ class OpenCodeClient:
     def _ensure_connected(self) -> str:
         """Check if client is connected, return error message if not."""
         if not OPENCODE_AVAILABLE:
+            logger.error("SDK not available")
             return "OpenCode SDK is not installed. Please run: pip install --pre opencode-ai"
         if not self._client:
+            logger.error("Client not initialized")
             return "OpenCode client not initialized. Please check configuration."
         return ""
+    
+    def _check_server_health(self, timeout: int = 5) -> tuple[bool, str]:
+        """Check if the OpenCode server is responding to health checks.
+        
+        Args:
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        import requests
+        
+        health_url = f"{self._base_url}/global/health"
+        logger.debug(f"Checking server health at: {health_url}")
+        
+        try:
+            start_time = datetime.now()
+            headers = {}
+            if self._current_project_path:
+                headers["x-opencode-directory"] = self._current_project_path
+            
+            response = requests.get(health_url, headers=headers, timeout=timeout)
+            elapsed = (datetime.now() - start_time).total_seconds()
+            
+            logger.debug(f"Health check response: status={response.status_code}, time={elapsed:.3f}s")
+            
+            if response.status_code == 200:
+                data = response.json()
+                version = data.get("version", "unknown")
+                return True, f"OK (version={version}, latency={elapsed:.3f}s)"
+            else:
+                return False, f"HTTP {response.status_code}: {response.text[:100]}"
+                
+        except requests.exceptions.ConnectionError as e:
+            logger.debug(f"Health check connection error: {e}")
+            return False, f"Connection refused - server may not be ready"
+        except requests.exceptions.Timeout:
+            logger.debug(f"Health check timed out after {timeout}s")
+            return False, f"Timeout after {timeout}s"
+        except Exception as e:
+            logger.debug(f"Health check error: {e}")
+            return False, f"Error: {str(e)}"
+    
+    def _log_request(self, method: str, details: str = ""):
+        """Log an API request with timing info."""
+        self._request_count += 1
+        self._last_request_time = datetime.now()
+        logger.debug(f"API Request #{self._request_count}: {method} {details}")
+    
+    def _dump_diagnostic_state(self, context: str = ""):
+        """Dump full diagnostic state for debugging connection issues."""
+        import requests
+        
+        logger.warning(f"=== DIAGNOSTIC STATE DUMP ({context}) ===")
+        logger.warning(f"Time: {datetime.now().isoformat()}")
+        logger.warning(f"Client initialized at: {self._init_time.isoformat() if self._init_time else 'N/A'}")
+        logger.warning(f"Request count: {self._request_count}")
+        logger.warning(f"Last request at: {self._last_request_time.isoformat() if self._last_request_time else 'N/A'}")
+        logger.warning(f"Base URL: {self._base_url}")
+        logger.warning(f"Is connected: {self._is_connected}")
+        logger.warning(f"Current project path: {self._current_project_path}")
+        logger.warning(f"Has client object: {self._client is not None}")
+        
+        # Check server process
+        if self._server_process:
+            poll = self._server_process.poll()
+            logger.warning(f"Server process PID: {self._server_process.pid}")
+            logger.warning(f"Server process poll() result: {poll} (None=running)")
+        else:
+            logger.warning("Server process: None (not managed by this client)")
+        
+        # Try a direct health check
+        try:
+            response = requests.get(f"{self._base_url}/global/health", timeout=3)
+            logger.warning(f"Direct health check: status={response.status_code}")
+        except requests.exceptions.ConnectionError:
+            logger.warning("Direct health check: CONNECTION REFUSED")
+        except requests.exceptions.Timeout:
+            logger.warning("Direct health check: TIMEOUT")
+        except Exception as e:
+            logger.warning(f"Direct health check: ERROR - {e}")
+        
+        logger.warning("=== END DIAGNOSTIC STATE DUMP ===")
 
     # ==================== Session Management ====================
 
@@ -222,28 +423,62 @@ class OpenCodeClient:
         Returns:
             JSON string with session details or error message
         """
+        self._log_request("create_session")
+        logger.info("=== CREATE SESSION REQUEST ===")
+        logger.debug(f"State: is_connected={self._is_connected}, project={self._current_project_path}")
+        
         error = self._ensure_connected()
         if error:
+            logger.error(f"Connection check failed: {error}")
             return error
             
         try:
             # Workaround: SDK sends empty JSON {} which causes "Malformed JSON" error
             # The server expects NO body, so use raw HTTP POST instead
             import requests
-            response = requests.post(f"{self._base_url}/session", timeout=10)
+            
+            headers = {}
+            if self._current_project_path:
+                headers["x-opencode-directory"] = self._current_project_path
+            
+            url = f"{self._base_url}/session"
+            logger.debug(f"POST {url}")
+            logger.debug(f"Headers: {headers}")
+            
+            start_time = datetime.now()
+            response = requests.post(url, headers=headers, timeout=10)
+            elapsed = (datetime.now() - start_time).total_seconds()
+            
+            logger.debug(f"Response: status={response.status_code}, time={elapsed:.3f}s")
+            
             response.raise_for_status()
             session_data = response.json()
             
+            session_id = session_data.get("id")
+            logger.info(f"Session created: {session_id}")
+            
             return json.dumps({
                 "success": True,
-                "session_id": session_data.get("id"),
+                "session_id": session_id,
                 "title": session_data.get("title"),
                 "created_at": str(session_data.get("time", {}).get("created")),
                 "message": "Session created successfully. Use this session_id for subsequent tasks."
             }, indent=2)
-        except requests.exceptions.ConnectionError:
+            
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error during create_session: {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
+            # Dump diagnostic state
+            self._dump_diagnostic_state("create_session ConnectionError")
             return f"Cannot connect to OpenCode server at {self._base_url}. Is 'opencode serve' running?"
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error during create_session: {e}")
+            logger.debug(f"Response text: {e.response.text[:500] if e.response else 'N/A'}")
+            return f"HTTP error creating session: {str(e)}"
         except Exception as e:
+            logger.error(f"Unexpected error during create_session: {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
+            self._dump_diagnostic_state("create_session Exception")
             return f"Error creating session: {str(e)}"
 
     def list_sessions(self) -> str:
@@ -275,8 +510,8 @@ class OpenCodeClient:
         except Exception as e:
             return f"Error listing sessions: {str(e)}"
 
-    def send_task(self, session_id: str, task: str, model_provider: str = "anthropic", 
-                  model_id: str = "claude-sonnet-4-20250514") -> str:
+    def send_task(self, session_id: str, task: str, model_provider: str = "google", 
+                  model_id: str = "gemini-3-pro-preview") -> str:
         """Send a coding task to OpenCode and wait for the result.
         
         Args:
@@ -288,11 +523,30 @@ class OpenCodeClient:
         Returns:
             JSON string with task result or error message
         """
+        self._log_request("send_task", f"session={session_id[:20]}...")
+        logger.info("=== SEND TASK REQUEST ===")
+        logger.info(f"Session ID: {session_id}")
+        logger.info(f"Task: {task[:100]}{'...' if len(task) > 100 else ''}")
+        logger.debug(f"Model: {model_provider}/{model_id}")
+        logger.debug(f"State: is_connected={self._is_connected}, project={self._current_project_path}")
+        
         error = self._ensure_connected()
         if error:
+            logger.error(f"Connection check failed: {error}")
             return error
+        
+        # Pre-flight health check
+        health_ok, health_msg = self._check_server_health(timeout=3)
+        if not health_ok:
+            logger.warning(f"Pre-flight health check failed: {health_msg}")
+            self._dump_diagnostic_state("send_task pre-flight health check failed")
+        else:
+            logger.debug(f"Pre-flight health check: {health_msg}")
             
         try:
+            logger.debug("Calling session.chat via SDK...")
+            start_time = datetime.now()
+            
             result = self._client.session.chat(
                 session_id,
                 parts=[{"type": "text", "text": task}],
@@ -300,37 +554,56 @@ class OpenCodeClient:
                 provider_id=model_provider
             )
             
-            # Extract relevant information from the result
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"Task completed in {elapsed:.2f}s")
+            
+            # Extract relevant information from the AssistantMessage result
+            # Note: AssistantMessage contains metadata, not the actual response content
+            # Use get_messages() to retrieve the full assistant response with parts
             response_data = {
                 "success": True,
                 "session_id": session_id,
                 "task": task,
+                "message_id": getattr(result, 'id', None),
+                "cost": getattr(result, 'cost', None),
+                "elapsed_seconds": elapsed,
             }
             
-            # Try to extract parts/content from the response
-            if hasattr(result, 'parts'):
-                parts = []
-                for part in result.parts:
-                    part_data = {}
-                    if hasattr(part, 'type'):
-                        part_data['type'] = part.type
-                    if hasattr(part, 'text'):
-                        part_data['text'] = part.text
-                    if hasattr(part, 'tool_use'):
-                        part_data['tool_use'] = str(part.tool_use)
-                    parts.append(part_data)
-                response_data['parts'] = parts
+            # Extract token usage if available
+            if hasattr(result, 'tokens') and result.tokens:
+                response_data['tokens'] = {
+                    "input": getattr(result.tokens, 'input', None),
+                    "output": getattr(result.tokens, 'output', None),
+                    "reasoning": getattr(result.tokens, 'reasoning', None),
+                }
+                if hasattr(result.tokens, 'cache') and result.tokens.cache:
+                    response_data['tokens']['cache'] = {
+                        "read": getattr(result.tokens.cache, 'read', None),
+                        "write": getattr(result.tokens.cache, 'write', None),
+                    }
             
-            if hasattr(result, 'id'):
-                response_data['message_id'] = result.id
-                
+            # Note for the agent/user
+            response_data['note'] = "Task submitted and completed. Call opencode_get_messages to retrieve the assistant's response content."
+            
+            logger.debug(f"Response message_id: {response_data.get('message_id')}")
+            logger.info("=== SEND TASK COMPLETED SUCCESSFULLY ===")
             return json.dumps(response_data, indent=2, default=str)
             
         except opencode_ai.APIConnectionError as e:
+            logger.error(f"APIConnectionError during send_task: {e}")
+            logger.debug(f"Exception type: {type(e).__name__}")
+            logger.debug(f"Exception details: {repr(e)}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
+            self._dump_diagnostic_state("send_task APIConnectionError")
             return f"Cannot connect to OpenCode server. Is 'opencode serve' running? Error: {e}"
         except opencode_ai.BadRequestError as e:
+            logger.error(f"BadRequestError during send_task: {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
             return f"Bad request to OpenCode: {str(e)}"
         except Exception as e:
+            logger.error(f"Unexpected error during send_task: {type(e).__name__}: {e}")
+            logger.debug(f"Traceback:\n{traceback.format_exc()}")
+            self._dump_diagnostic_state("send_task Exception")
             return f"Error executing task: {str(e)}"
 
     def get_messages(self, session_id: str) -> str:
@@ -358,7 +631,8 @@ class OpenCodeClient:
                     parts = []
                     for part in msg.parts:
                         if hasattr(part, 'text'):
-                            parts.append({"type": "text", "text": part.text[:500]})  # Truncate long texts
+                            # Return full text - no truncation
+                            parts.append({"type": "text", "text": part.text})
                         elif hasattr(part, 'type'):
                             parts.append({"type": part.type})
                     msg_data['parts'] = parts
@@ -420,8 +694,8 @@ class OpenCodeClient:
         except Exception as e:
             return f"Error reverting changes: {str(e)}"
 
-    def summarize_session(self, session_id: str, model_provider: str = "anthropic",
-                          model_id: str = "claude-sonnet-4-20250514") -> str:
+    def summarize_session(self, session_id: str, model_provider: str = "google",
+                          model_id: str = "gemini-3-pro-preview") -> str:
         """Get a summary of a session.
         
         Args:
@@ -500,7 +774,7 @@ class OpenCodeClient:
                 "success": True,
                 "pattern": pattern,
                 "count": len(files),
-                "files": files[:50]  # Limit to 50 files
+                "files": files  # No limit
             }, indent=2)
         except Exception as e:
             return f"Error finding files: {str(e)}"
@@ -529,13 +803,13 @@ class OpenCodeClient:
                     if hasattr(match, 'line'):
                         match_data['line'] = match.line
                     if hasattr(match, 'content'):
-                        match_data['content'] = match.content[:200]  # Truncate
+                        match_data['content'] = match.content  # No truncation
                     matches.append(match_data)
             return json.dumps({
                 "success": True,
                 "query": query,
                 "count": len(matches),
-                "matches": matches[:30]  # Limit results
+                "matches": matches  # No limit
             }, indent=2)
         except Exception as e:
             return f"Error searching text: {str(e)}"
@@ -544,7 +818,7 @@ class OpenCodeClient:
         """Read contents of a file.
         
         Args:
-            path: Path to the file to read
+            path: Path to the file to read (relative or absolute)
             
         Returns:
             File contents or error message
@@ -552,7 +826,14 @@ class OpenCodeClient:
         error = self._ensure_connected()
         if error:
             return error
-            
+        
+        # Resolve path - if relative, prepend project path
+        resolved_path = path
+        if not os.path.isabs(path) and self._current_project_path:
+            resolved_path = os.path.join(self._current_project_path, path)
+            logger.debug(f"Resolved relative path '{path}' to '{resolved_path}'")
+        
+        # Try SDK first
         try:
             result = self._client.file.read(path=path)
             
@@ -560,11 +841,9 @@ class OpenCodeClient:
             if isinstance(result, list):
                 # Server returned a list (possibly empty or with file chunks)
                 if len(result) == 0:
-                    return json.dumps({
-                        "success": False,
-                        "path": path,
-                        "error": "File not found or server returned empty response. Try using run_system_command with 'type' command instead."
-                    }, indent=2)
+                    # SDK returned empty - try filesystem fallback
+                    logger.debug(f"SDK returned empty list for '{path}', trying filesystem fallback")
+                    return self._read_file_fallback(resolved_path, path)
                 # If list has content, try to extract it
                 content = str(result)
             elif hasattr(result, 'content'):
@@ -573,10 +852,7 @@ class OpenCodeClient:
             else:
                 content = str(result)
             
-            # Truncate very long files
-            if len(content) > 10000:
-                content = content[:10000] + "\n... [truncated, file too large]"
-                
+            # Return full content - no truncation
             return json.dumps({
                 "success": True,
                 "path": path,
@@ -584,7 +860,47 @@ class OpenCodeClient:
                 "type": getattr(result, 'type', 'raw') if hasattr(result, 'type') else 'raw'
             }, indent=2)
         except Exception as e:
-            return f"Error reading file: {str(e)}"
+            logger.warning(f"SDK file.read failed: {e}, trying filesystem fallback")
+            return self._read_file_fallback(resolved_path, path)
+    
+    def _read_file_fallback(self, resolved_path: str, original_path: str) -> str:
+        """Fallback to direct filesystem read when SDK fails.
+        
+        Args:
+            resolved_path: The absolute path to try reading
+            original_path: The original path requested (for error messages)
+            
+        Returns:
+            JSON string with file contents or error
+        """
+        if os.path.exists(resolved_path):
+            try:
+                with open(resolved_path, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+                
+                # Return full content - no truncation
+                logger.info(f"Successfully read file via filesystem fallback: {resolved_path}")
+                return json.dumps({
+                    "success": True,
+                    "path": resolved_path,
+                    "content": content,
+                    "source": "filesystem_fallback",
+                    "note": "Read directly from filesystem (SDK returned empty)"
+                }, indent=2)
+            except Exception as e:
+                logger.error(f"Filesystem fallback failed: {e}")
+                return json.dumps({
+                    "success": False,
+                    "path": original_path,
+                    "error": f"Both SDK and filesystem read failed: {str(e)}"
+                }, indent=2)
+        else:
+            return json.dumps({
+                "success": False,
+                "path": original_path,
+                "resolved_path": resolved_path,
+                "error": f"File not found. The resolved path '{resolved_path}' does not exist."
+            }, indent=2)
 
     # ==================== Status & Info ====================
 

@@ -1,21 +1,32 @@
 Set WshShell = CreateObject("WScript.Shell")
 
-' ROBUST CLEANUP: Kill any process using port 80 and related Nova processes
-' This prevents multiple instance conflicts after restart
+' SURGICAL CLEANUP: Avoid broad kills that might hit your IDE or other apps
+' This script targets specifically Nova's key components
 
-' Method 1: Kill by process name
-WshShell.Run "taskkill /F /IM python.exe", 0, True
-WshShell.Run "taskkill /F /IM main_v2.exe", 0, True
+' 1. Kill WhatsApp bridge binaries specifically
+WshShell.Run "taskkill /F /IM main.exe", 0, True
+WshShell.Run "taskkill /F /IM whatsapp-bridge.exe", 0, True
 
-' Method 2: Kill by window title (in case process name filtering doesn't work)  
-WshShell.Run "taskkill /F /FI ""WINDOWTITLE eq *Nova*""", 0, True
-WshShell.Run "taskkill /F /FI ""WINDOWTITLE eq *uvicorn*""", 0, True
+' 2. Kill Nova Backend Python process using PowerShell for precision
+WshShell.Run "powershell -Command ""Get-CimInstance Win32_Process -Filter \""Name='python.exe'\"" | Where-Object { $_.CommandLine -like '*app.main*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }""", 0, True
 
-' Wait for port to be fully released (TIME_WAIT state can linger)
-WScript.Sleep 3000
+' 3. Kill Windows MCP (if running separately)
+WshShell.Run "powershell -Command ""Get-CimInstance Win32_Process -Filter \""Name='python.exe'\"" | Where-Object { $_.CommandLine -like '*windows_mcp*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }""", 0, True
 
-' Start the backend silently (no --reload to prevent subprocess issues)
+' 4. Kill WhatsApp MCP Server (if running separately)
+WshShell.Run "powershell -Command ""Get-CimInstance Win32_Process -Filter \""Name='python.exe'\"" | Where-Object { $_.CommandLine -like '*whatsapp-mcp-server*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }""", 0, True
+
+' 5. Kill OpenCode server specifically
+WshShell.Run "powershell -Command ""Get-CimInstance Win32_Process -Filter \""Name='node.exe'\"" | Where-Object { $_.CommandLine -like '*opencode*serve*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }""", 0, True
+
+' 6. Kill Vite (Frontend Dev Server)
+WshShell.Run "powershell -Command ""Get-CimInstance Win32_Process -Filter \""Name='node.exe'\"" | Where-Object { $_.CommandLine -like '*vite*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }""", 0, True
+
+' Wait for port to be fully released
+WScript.Sleep 2000
+
+' Start the backend silently with reduced logging
 WshShell.CurrentDirectory = "c:\Users\ymyex\Projects\Nova-AI-Assistant"
-WshShell.Run "python -m uvicorn app.main:app --host 0.0.0.0 --port 80", 0, False
+WshShell.Run "python -m uvicorn app.main:app --host 0.0.0.0 --port 80 --no-access-log --log-level warning", 0, False
 
 Set WshShell = Nothing

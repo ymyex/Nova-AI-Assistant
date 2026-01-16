@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import textwrap
 import subprocess
-from typing import Optional, Dict, Any
+import sys
+import os
+from typing import Optional, Dict, Any, List
 
 from google import genai
 from google.genai import types
@@ -11,6 +13,59 @@ import requests
 from .config import Settings
 from .exceptions import ConfigurationError, GeminiError
 from .models import NovaPayload
+from .search_agent import SearchAgent
+
+# Add WhatsApp MCP server to path for importing whatsapp functions
+_whatsapp_mcp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whatsapp-mcp", "whatsapp-mcp-server")
+if _whatsapp_mcp_path not in sys.path:
+    sys.path.insert(0, _whatsapp_mcp_path)
+
+# Import WhatsApp functions from MCP server
+try:
+    from whatsapp import (
+        search_contacts as wa_search_contacts,
+        list_messages as wa_list_messages,
+        list_chats as wa_list_chats,
+        get_chat as wa_get_chat,
+        get_direct_chat_by_contact as wa_get_direct_chat_by_contact,
+        get_contact_chats as wa_get_contact_chats,
+        get_last_interaction as wa_get_last_interaction,
+        get_message_context as wa_get_message_context,
+        send_message as wa_send_message,
+        send_file as wa_send_file,
+        send_audio_message as wa_send_audio_message,
+        download_media as wa_download_media
+    )
+    WHATSAPP_AVAILABLE = True
+except ImportError as e:
+    print(f"[Gemini] Warning: WhatsApp functions not available: {e}")
+    WHATSAPP_AVAILABLE = False
+
+
+def get_builtin_tools(google_search: bool = False, url_context: bool = False):
+    """Create built-in Gemini tools for real-time web access.
+    
+    NOTE: These tools CANNOT be combined with function calling tools.
+    When enabled, function calling tools (Gmail, OpenCode, WhatsApp) must be disabled.
+    
+    Args:
+        google_search: Enable Google Search Grounding for real-time web search
+        url_context: Enable URL Context for analyzing content from specific URLs
+    
+    Returns:
+        List of tool configurations, or None if no tools enabled
+    """
+    tools = []
+    
+    if google_search:
+        # Google Search Grounding - provides real-time web search with citations
+        tools.append(types.Tool(google_search=types.GoogleSearch()))
+    
+    if url_context:
+        # URL Context - allows model to fetch and analyze content from URLs in the prompt
+        tools.append({"url_context": {}})
+    
+    return tools if tools else None
 
 
 def get_tools():
@@ -196,10 +251,202 @@ def get_tools():
         """
         pass
     
+    
     def opencode_get_server_status() -> str:
         """Check if an OpenCode server is currently running and which project it's on.
         
         Use this to see if you need to start a server for a different project.
+        """
+        pass
+    
+    # ==================== WhatsApp Tools ====================
+    
+    def whatsapp_search_contacts(query: str) -> str:
+        """Search WhatsApp contacts by name or phone number.
+        
+        Args:
+            query: Search term to match against contact names or phone numbers
+        """
+        pass
+    
+    def whatsapp_list_messages(
+        chat_jid: Optional[str] = None,
+        query: Optional[str] = None,
+        sender_phone_number: Optional[str] = None,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        limit: int = 20,
+        page: int = 0,
+        include_context: bool = True,
+        context_before: int = 1,
+        context_after: int = 1
+    ) -> str:
+        """Get WhatsApp messages matching specified criteria with optional context.
+        
+        Args:
+            chat_jid: Optional chat JID to filter messages by chat
+            query: Optional search term to filter messages by content
+            sender_phone_number: Optional phone number to filter messages by sender
+            after: Optional ISO-8601 formatted string to only return messages after this date
+            before: Optional ISO-8601 formatted string to only return messages before this date
+            limit: Maximum number of messages to return (default 20)
+            page: Page number for pagination (default 0)
+            include_context: Whether to include messages before and after matches (default True)
+            context_before: Number of messages to include before each match (default 1)
+            context_after: Number of messages to include after each match (default 1)
+        """
+        pass
+    
+    def whatsapp_list_chats(
+        query: Optional[str] = None,
+        limit: int = 20,
+        page: int = 0,
+        include_last_message: bool = True,
+        sort_by: str = "last_active"
+    ) -> str:
+        """Get WhatsApp chats matching specified criteria.
+        
+        Args:
+            query: Optional search term to filter chats by name or JID
+            limit: Maximum number of chats to return (default 20)
+            page: Page number for pagination (default 0)
+            include_last_message: Whether to include the last message in each chat (default True)
+            sort_by: Field to sort results by, either "last_active" or "name" (default "last_active")
+        """
+        pass
+    
+    def whatsapp_get_chat(chat_jid: str, include_last_message: bool = True) -> str:
+        """Get WhatsApp chat metadata by JID.
+        
+        Args:
+            chat_jid: The JID of the chat to retrieve
+            include_last_message: Whether to include the last message (default True)
+        """
+        pass
+    
+    def whatsapp_get_direct_chat_by_contact(sender_phone_number: str) -> str:
+        """Get WhatsApp chat metadata by sender phone number.
+        
+        Args:
+            sender_phone_number: The phone number to search for
+        """
+        pass
+    
+    def whatsapp_get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> str:
+        """Get all WhatsApp chats involving a specific contact.
+        
+        Args:
+            jid: The contact's JID to search for
+            limit: Maximum number of chats to return (default 20)
+            page: Page number for pagination (default 0)
+        """
+        pass
+    
+    def whatsapp_get_last_interaction(jid: str) -> str:
+        """Get the most recent WhatsApp message involving a contact.
+        
+        Args:
+            jid: The JID of the contact to search for
+        """
+        pass
+    
+    def whatsapp_get_message_context(
+        message_id: str,
+        before: int = 5,
+        after: int = 5
+    ) -> str:
+        """Get context around a specific WhatsApp message.
+        
+        Args:
+            message_id: The ID of the message to get context for
+            before: Number of messages to include before the target message (default 5)
+            after: Number of messages to include after the target message (default 5)
+        """
+        pass
+    
+    def whatsapp_send_message(recipient: str, message: str) -> str:
+        """Send a WhatsApp message to a person or group.
+        
+        IMPORTANT: When replying to a conversation, use the Chat JID from the context,
+        NOT the Sender JID. The Chat JID identifies the conversation (group or direct chat).
+        
+        Args:
+            recipient: The recipient JID - use Chat JID for replies (e.g., "120363420709831061@g.us" for groups,
+                      "123456789@s.whatsapp.net" for direct chats)
+            message: The message text to send
+        """
+        pass
+    
+    def whatsapp_send_file(recipient: str, media_path: str) -> str:
+        """Send a file (image, video, document) via WhatsApp.
+        
+        IMPORTANT: When replying to a conversation, use the Chat JID from the context,
+        NOT the Sender JID. The Chat JID identifies the conversation (group or direct chat).
+        
+        Args:
+            recipient: The recipient JID - use Chat JID for replies (e.g., "120363420709831061@g.us" for groups,
+                      "123456789@s.whatsapp.net" for direct chats)
+            media_path: The absolute path to the media file to send
+        """
+        pass
+    
+    def whatsapp_send_audio_message(recipient: str, media_path: str) -> str:
+        """Send an audio file as a WhatsApp voice message.
+        
+        IMPORTANT: When replying to a conversation, use the Chat JID from the context,
+        NOT the Sender JID. The Chat JID identifies the conversation (group or direct chat).
+        
+        Args:
+            recipient: The recipient JID - use Chat JID for replies (e.g., "120363420709831061@g.us" for groups,
+                      "123456789@s.whatsapp.net" for direct chats)
+            media_path: The absolute path to the audio file to send (will be converted to Opus .ogg if needed)
+        """
+        pass
+    
+    def whatsapp_download_media(message_id: str, chat_jid: str) -> str:
+        """Download media from a WhatsApp message and get the local file path.
+        
+        Args:
+            message_id: The ID of the message containing the media
+            chat_jid: The JID of the chat containing the message
+        """
+        pass
+    
+    # =========================================================================
+    # Web Search Tools - These delegate to SearchAgent for real-time web access
+    # =========================================================================
+    
+    def web_search(query: str) -> str:
+        """Search the web for real-time, current information using Google Search.
+        
+        Use this tool when you need:
+        - Current news, events, or information
+        - Facts that may have changed recently
+        - Information you're not certain about
+        - Real-time data (stock prices, weather, sports scores, etc.)
+        
+        Args:
+            query: The search query to find current information about
+        
+        Returns:
+            Search results with relevant information and sources
+        """
+        pass
+    
+    def analyze_url_content(url: str, question: str = None) -> str:
+        """Fetch and analyze the content of a specific webpage.
+        
+        Use this tool when:
+        - The user provides a URL they want analyzed
+        - You need to read the content of a specific webpage
+        - You need to summarize or extract information from a link
+        
+        Args:
+            url: The URL of the webpage to analyze
+            question: Optional specific question about the content
+        
+        Returns:
+            Analysis or summary of the webpage content
         """
         pass
     
@@ -229,6 +476,22 @@ def get_tools():
         opencode_find_text,
         opencode_read_file,
         opencode_check_status,
+        # WhatsApp tools
+        whatsapp_search_contacts,
+        whatsapp_list_messages,
+        whatsapp_list_chats,
+        whatsapp_get_chat,
+        whatsapp_get_direct_chat_by_contact,
+        whatsapp_get_contact_chats,
+        whatsapp_get_last_interaction,
+        whatsapp_get_message_context,
+        whatsapp_send_message,
+        whatsapp_send_file,
+        whatsapp_send_audio_message,
+        whatsapp_download_media,
+        # Web Search tools (delegates to SearchAgent)
+        web_search,
+        analyze_url_content,
     ]
 
 
@@ -247,7 +510,43 @@ class GeminiClient:
         # Create the new SDK client
         self._client = genai.Client(api_key=self._api_key)
         
-        print(f"[Gemini] Initialized with model: {self._model_name} (new SDK with thinking support)")
+        # Create SearchAgent for web search/URL analysis tools
+        # Settings control whether these tools are available
+        self._search_agent = SearchAgent(api_key=self._api_key, model_name="gemini-3-pro-preview")
+        self._google_search_enabled = settings.google_search_enabled
+        self._url_context_enabled = settings.url_context_enabled
+        
+        # Log initialization
+        search_tools = []
+        if self._google_search_enabled:
+            search_tools.append("web_search")
+        if self._url_context_enabled:
+            search_tools.append("analyze_url")
+        search_tools_str = f" | Search tools: {', '.join(search_tools)}" if search_tools else ""
+        
+        print(f"[Gemini] Initialized with model: {self._model_name}{search_tools_str}")
+    
+    def set_research_mode(self, google_search: bool, url_context: bool) -> None:
+        """Update research mode settings dynamically.
+        
+        Args:
+            google_search: Enable Google Search Grounding
+            url_context: Enable URL Context
+        """
+        self._google_search_enabled = google_search
+        self._url_context_enabled = url_context
+        print(f"[Gemini] Research mode updated: Google Search={google_search}, URL Context={url_context}")
+    
+    def get_research_mode(self) -> Dict[str, bool]:
+        """Get current research mode settings."""
+        return {
+            "google_search_enabled": self._google_search_enabled,
+            "url_context_enabled": self._url_context_enabled
+        }
+    
+    def is_research_mode_enabled(self) -> bool:
+        """Check if any research mode tool is enabled."""
+        return self._google_search_enabled or self._url_context_enabled
     
     def set_tools(self, tools) -> None:
         """Set the tools instance for function execution."""
@@ -257,6 +556,94 @@ class GeminiClient:
         """Set the OpenCode client for agentic coding operations."""
         self._opencode_client = opencode_client
         print("[Gemini] OpenCode client connected")
+
+    def generate_chat_title(self, user_message: str, assistant_response: str = "") -> str:
+        """Generate a short 2-3 word title for a chat conversation.
+        
+        Args:
+            user_message: The user's first message
+            assistant_response: Optional assistant response (not required)
+            
+        Returns:
+            A short title (2-3 words max)
+        """
+        try:
+            prompt = f"""Generate a very short title (2-3 words maximum) for this conversation based on the user's message.
+The title should capture the main topic or intent.
+Return ONLY the title, nothing else. No quotes, no punctuation at the end.
+
+User message: {user_message[:300]}
+
+Title:"""
+            
+            # Use a simpler, faster model call without tools
+            response = self._client.models.generate_content(
+                model="gemini-2.0-flash-lite",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=20,
+                )
+            )
+            
+            if response.text:
+                # Clean up the title - remove quotes, extra whitespace, limit to 3 words
+                title = response.text.strip().strip('"\'').strip()
+                words = title.split()[:3]  # Max 3 words
+                return " ".join(words)
+            
+            return ""
+        except Exception as e:
+            print(f"[Gemini] Error generating chat title: {e}")
+            return ""
+
+    def _get_tool_description(self, tool_name: str, args: dict) -> str:
+        """Generate a human-readable description of what a tool will do."""
+        descriptions = {
+            # Gmail tools
+            "gmail_read_inbox": "Let me check your Gmail inbox...",
+            "gmail_search": f"Searching your emails for '{args.get('query', 'messages')}'...",
+            "gmail_send_email": f"Sending an email to {args.get('to', 'recipient')}...",
+            "gmail_get_unread_count": "Checking your unread email count...",
+            "gmail_read_email": "Reading that email for you...",
+            "gmail_get_labels": "Getting your Gmail labels...",
+            "gmail_check_status": "Checking Gmail connection status...",
+            
+            # System commands
+            "run_system_command": f"Running command: `{args.get('command', 'command')[:50]}`...",
+            
+            # OpenCode tools
+            "opencode_start_server": f"Starting OpenCode server for {args.get('project_path', 'project')}...",
+            "opencode_stop_server": "Stopping the OpenCode server...",
+            "opencode_get_server_status": "Checking OpenCode server status...",
+            "opencode_create_session": "Creating a new coding session...",
+            "opencode_send_task": "Sending a task to the coding agent...",
+            "opencode_list_sessions": "Listing active coding sessions...",
+            "opencode_get_messages": "Getting messages from the coding session...",
+            "opencode_abort_task": "Aborting the current task...",
+            "opencode_revert_changes": "Reverting recent changes...",
+            "opencode_summarize": "Summarizing the session...",
+            "opencode_find_files": f"Searching for files matching '{args.get('pattern', 'pattern')}'...",
+            "opencode_find_text": f"Searching for '{args.get('text', 'text')[:30]}' in files...",
+            "opencode_read_file": f"Reading file: {args.get('path', 'file')[:50]}...",
+            "opencode_check_status": "Checking OpenCode connection...",
+            
+            # WhatsApp tools
+            "whatsapp_search_contacts": f"Searching WhatsApp contacts for '{args.get('query', 'contacts')}'...",
+            "whatsapp_list_messages": "Retrieving WhatsApp messages...",
+            "whatsapp_list_chats": "Listing WhatsApp chats...",
+            "whatsapp_get_chat": "Getting chat information...",
+            "whatsapp_get_direct_chat_by_contact": f"Finding chat with {args.get('sender_phone_number', 'contact')}...",
+            "whatsapp_get_contact_chats": "Getting all chats with contact...",
+            "whatsapp_get_last_interaction": "Getting last interaction...",
+            "whatsapp_get_message_context": "Getting message context...",
+            "whatsapp_send_message": f"Sending WhatsApp message to {args.get('recipient', 'recipient')[:20]}...",
+            "whatsapp_send_file": f"Sending file via WhatsApp...",
+            "whatsapp_send_audio_message": "Sending voice message...",
+            "whatsapp_download_media": "Downloading media from message...",
+        }
+        
+        return descriptions.get(tool_name, f"Using {tool_name}...")
 
     def _build_prompt(self, payload: NovaPayload, gmail_context: str = "") -> str:
         """Build a professional, structured system prompt for Nova AI."""
@@ -381,6 +768,45 @@ You have **FULL** access to the user's Gmail via the following tools:
 
 --------------------------------------------------------------------------------
 
+## WHATSAPP INTEGRATION
+
+You have **FULL** access to WhatsApp messaging capabilities via these tools:
+
+### Contact & Chat Discovery
+| Tool | Purpose |
+|------|---------|
+| `whatsapp_search_contacts` | Search contacts by name or phone number |
+| `whatsapp_list_chats` | List available chats with metadata |
+| `whatsapp_get_chat` | Get information about a specific chat by JID |
+| `whatsapp_get_direct_chat_by_contact` | Find a direct chat with a contact |
+| `whatsapp_get_contact_chats` | List all chats involving a specific contact |
+
+### Message Retrieval
+| Tool | Purpose |
+|------|---------|
+| `whatsapp_list_messages` | Retrieve messages with filters and context |
+| `whatsapp_get_last_interaction` | Get the most recent message with a contact |
+| `whatsapp_get_message_context` | Retrieve context around a specific message |
+
+### Sending
+| Tool | Purpose |
+|------|---------|
+| `whatsapp_send_message` | Send a message to a phone number or group JID |
+| `whatsapp_send_file` | Send a file (image, video, document) |
+| `whatsapp_send_audio_message` | Send an audio file as a voice message |
+
+### Media
+| Tool | Purpose |
+|------|---------|
+| `whatsapp_download_media` | Download media from a message |
+
+**CRITICAL**: 
+- You CAN read WhatsApp chat history - do NOT say you can't.
+- You CAN send messages on WhatsApp - do NOT say you can't.
+- For phone numbers, use country code without + or symbols (e.g., "1234567890")
+- For groups, use the JID format (e.g., "123456789@g.us")
+
+
 ## MEDIA PROCESSING CAPABILITIES
 
 You have **FULL** capability to process:
@@ -427,6 +853,10 @@ You are an **autonomous agent** capable of multi-step task execution:
 ================================================================================
 """
 
+        # Build recipient info - chat_jid is the PRIMARY destination for sending messages/files
+        chat_jid = message.chat_jid or ""
+        sender_jid = message.sender_jid or message.sender_phone or ""
+        
         prompt = textwrap.dedent(
             f"""
             {system_instructions}
@@ -434,7 +864,12 @@ You are an **autonomous agent** capable of multi-step task execution:
             ## CURRENT CONTEXT
 
             **Chat:** {chat}
+            **Chat JID:** {chat_jid}
             **Sender:** {sender}
+            **Sender JID:** {sender_jid}
+
+            **IMPORTANT**: When sending WhatsApp messages or files back to this conversation,
+            use the **Chat JID** (`{chat_jid}`) as the recipient, NOT the Sender JID.
 
             ### Conversation History:
             {context_block}
@@ -605,6 +1040,235 @@ You are an **autonomous agent** capable of multi-step task execution:
                     return "OpenCode client is not configured. Please set up OpenCode first."
                 return self._opencode_client.check_status()
             
+            # ==================== WhatsApp Handlers ====================
+            
+            elif function_name == "whatsapp_search_contacts":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                query = args.get("query", "")
+                if not query:
+                    return "query is required for whatsapp_search_contacts"
+                try:
+                    contacts = wa_search_contacts(query)
+                    import json
+                    return json.dumps(contacts, indent=2, default=str)
+                except Exception as e:
+                    return f"Error searching contacts: {str(e)}"
+            
+            elif function_name == "whatsapp_list_messages":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                try:
+                    messages = wa_list_messages(
+                        after=args.get("after"),
+                        before=args.get("before"),
+                        sender_phone_number=args.get("sender_phone_number"),
+                        chat_jid=args.get("chat_jid"),
+                        query=args.get("query"),
+                        limit=args.get("limit", 20),
+                        page=args.get("page", 0),
+                        include_context=args.get("include_context", True),
+                        context_before=args.get("context_before", 1),
+                        context_after=args.get("context_after", 1)
+                    )
+                    import json
+                    return json.dumps(messages, indent=2, default=str)
+                except Exception as e:
+                    return f"Error listing messages: {str(e)}"
+            
+            elif function_name == "whatsapp_list_chats":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                try:
+                    chats = wa_list_chats(
+                        query=args.get("query"),
+                        limit=args.get("limit", 20),
+                        page=args.get("page", 0),
+                        include_last_message=args.get("include_last_message", True),
+                        sort_by=args.get("sort_by", "last_active")
+                    )
+                    import json
+                    return json.dumps(chats, indent=2, default=str)
+                except Exception as e:
+                    return f"Error listing chats: {str(e)}"
+            
+            elif function_name == "whatsapp_get_chat":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                chat_jid = args.get("chat_jid", "")
+                if not chat_jid:
+                    return "chat_jid is required for whatsapp_get_chat"
+                try:
+                    chat = wa_get_chat(
+                        chat_jid,
+                        include_last_message=args.get("include_last_message", True)
+                    )
+                    import json
+                    return json.dumps(chat, indent=2, default=str)
+                except Exception as e:
+                    return f"Error getting chat: {str(e)}"
+            
+            elif function_name == "whatsapp_get_direct_chat_by_contact":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                sender_phone_number = args.get("sender_phone_number", "")
+                if not sender_phone_number:
+                    return "sender_phone_number is required for whatsapp_get_direct_chat_by_contact"
+                try:
+                    chat = wa_get_direct_chat_by_contact(sender_phone_number)
+                    import json
+                    return json.dumps(chat, indent=2, default=str)
+                except Exception as e:
+                    return f"Error getting direct chat: {str(e)}"
+            
+            elif function_name == "whatsapp_get_contact_chats":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                jid = args.get("jid", "")
+                if not jid:
+                    return "jid is required for whatsapp_get_contact_chats"
+                try:
+                    chats = wa_get_contact_chats(
+                        jid,
+                        limit=args.get("limit", 20),
+                        page=args.get("page", 0)
+                    )
+                    import json
+                    return json.dumps(chats, indent=2, default=str)
+                except Exception as e:
+                    return f"Error getting contact chats: {str(e)}"
+            
+            elif function_name == "whatsapp_get_last_interaction":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                jid = args.get("jid", "")
+                if not jid:
+                    return "jid is required for whatsapp_get_last_interaction"
+                try:
+                    message = wa_get_last_interaction(jid)
+                    return str(message)
+                except Exception as e:
+                    return f"Error getting last interaction: {str(e)}"
+            
+            elif function_name == "whatsapp_get_message_context":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                message_id = args.get("message_id", "")
+                if not message_id:
+                    return "message_id is required for whatsapp_get_message_context"
+                try:
+                    context = wa_get_message_context(
+                        message_id,
+                        before=args.get("before", 5),
+                        after=args.get("after", 5)
+                    )
+                    import json
+                    return json.dumps(context, indent=2, default=str)
+                except Exception as e:
+                    return f"Error getting message context: {str(e)}"
+            
+            elif function_name == "whatsapp_send_message":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                recipient = args.get("recipient", "")
+                message = args.get("message", "")
+                if not recipient:
+                    return "recipient is required for whatsapp_send_message"
+                if not message:
+                    return "message is required for whatsapp_send_message"
+                try:
+                    success, status_message = wa_send_message(recipient, message)
+                    return f"Success: {success}, Message: {status_message}"
+                except Exception as e:
+                    return f"Error sending message: {str(e)}"
+            
+            elif function_name == "whatsapp_send_file":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                recipient = args.get("recipient", "")
+                media_path = args.get("media_path", "")
+                if not recipient:
+                    return "recipient is required for whatsapp_send_file"
+                if not media_path:
+                    return "media_path is required for whatsapp_send_file"
+                try:
+                    success, status_message = wa_send_file(recipient, media_path)
+                    return f"Success: {success}, Message: {status_message}"
+                except Exception as e:
+                    return f"Error sending file: {str(e)}"
+            
+            elif function_name == "whatsapp_send_audio_message":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                recipient = args.get("recipient", "")
+                media_path = args.get("media_path", "")
+                if not recipient:
+                    return "recipient is required for whatsapp_send_audio_message"
+                if not media_path:
+                    return "media_path is required for whatsapp_send_audio_message"
+                try:
+                    success, status_message = wa_send_audio_message(recipient, media_path)
+                    return f"Success: {success}, Message: {status_message}"
+                except Exception as e:
+                    return f"Error sending audio message: {str(e)}"
+            
+            elif function_name == "whatsapp_download_media":
+                if not WHATSAPP_AVAILABLE:
+                    return "WhatsApp functions are not available."
+                message_id = args.get("message_id", "")
+                chat_jid = args.get("chat_jid", "")
+                if not message_id:
+                    return "message_id is required for whatsapp_download_media"
+                if not chat_jid:
+                    return "chat_jid is required for whatsapp_download_media"
+                try:
+                    file_path = wa_download_media(message_id, chat_jid)
+                    if file_path:
+                        return f"Media downloaded successfully to: {file_path}"
+                    else:
+                        return "Failed to download media"
+                except Exception as e:
+                    return f"Error downloading media: {str(e)}"
+            
+            # ==================== Web Search Handlers ====================
+            # These tools delegate to SearchAgent for real-time web access
+            
+            elif function_name == "web_search":
+                query = args.get("query", "")
+                if not query:
+                    return "query is required for web_search"
+                try:
+                    result = self._search_agent.search_web(query)
+                    if result.get("success"):
+                        # Format response for the agent
+                        response = f"**Search Results for: {query}**\n\n"
+                        response += result.get("answer", "No answer found.")
+                        if result.get("sources"):
+                            response += "\n\n**Sources:**\n"
+                            for source in result["sources"][:5]:  # Limit to 5 sources
+                                response += f"- [{source.get('title', 'Source')}]({source.get('url', '')})\n"
+                        return response
+                    else:
+                        return f"Search failed: {result.get('error', 'Unknown error')}"
+                except Exception as e:
+                    return f"Error performing web search: {str(e)}"
+            
+            elif function_name == "analyze_url_content":
+                url = args.get("url", "")
+                question = args.get("question", None)
+                if not url:
+                    return "url is required for analyze_url_content"
+                try:
+                    result = self._search_agent.analyze_url(url, question)
+                    if result.get("success"):
+                        response = f"**Analysis of: {url}**\n\n"
+                        response += result.get("answer", "No analysis available.")
+                        return response
+                    else:
+                        return f"URL analysis failed: {result.get('error', 'Unknown error')}"
+                except Exception as e:
+                    return f"Error analyzing URL: {str(e)}"
+            
             else:
                 return f"Unknown function: {function_name}"
                 
@@ -642,7 +1306,8 @@ You are an **autonomous agent** capable of multi-step task execution:
                 if "flash" in self._model_name.lower():
                     thinking_level = "high"  # Can also use "medium" for balanced
                 
-                # Generate content
+                # Generate content - always use function calling tools
+                # Web search is now a tool that delegates to SearchAgent
                 response = self._client.models.generate_content(
                     model=self._model_name,
                     contents=chat_history,
@@ -652,7 +1317,8 @@ You are an **autonomous agent** capable of multi-step task execution:
                         tools=get_tools(),
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                         thinking_config=types.ThinkingConfig(
-                            thinking_level=thinking_level
+                            thinking_level=thinking_level,
+                            include_thoughts=True
                         )
                     )
                 )
@@ -745,4 +1411,223 @@ You are an **autonomous agent** capable of multi-step task execution:
             # Generic error - log and return friendly message
             print(f"[Gemini] Error: {exc}")
             raise GeminiError(f"Failed to generate suggestion: {exc}") from exc
+
+    def generate_suggestion_stream(
+        self, 
+        message: str, 
+        chat_history: Optional[List[Dict[str, str]]] = None,
+        media_data: Optional[bytes] = None, 
+        media_mime_type: Optional[str] = None,
+        model_override: Optional[str] = None
+    ):
+        """Generator that yields AgentEvent objects during processing for SSE streaming.
+        
+        This method is similar to generate_suggestion but yields events instead of
+        returning a final string, enabling the dashboard chat UI to show real-time
+        progress including thinking steps and tool calls.
+        
+        Args:
+            message: The user's message text
+            chat_history: Optional list of previous messages as dicts with 'role' and 'content'
+                         keys. These are prepended to give the model conversation context.
+            media_data: Optional binary media data
+            media_mime_type: Optional MIME type for media
+            
+        Yields:
+            dict: Event dictionaries with type and content
+        """
+        from .models import AgentEvent
+        
+        # Build a simpler prompt for the chat UI (no WhatsApp context)
+        system_prompt = """You are Nova, a helpful AI assistant with access to tools.
+
+AVAILABLE TOOLS:
+- run_system_command: Execute system commands
+- gmail_read_inbox, gmail_search, gmail_send_email, etc.: Gmail operations  
+- opencode_* tools: Agentic coding tasks
+
+IMPORTANT BEHAVIOR:
+- When you need to use a tool, first briefly explain what you're about to do and why
+- After getting tool results, explain what you found or what happened
+- Be conversational - the user wants to see your thought process
+- Keep explanations concise but informative
+- Always communicate in English unless explicitly asked otherwise
+
+Example flow:
+User: "Check my emails"
+You: "I'll check your Gmail inbox to see your recent messages." [then call gmail_read_inbox]
+After result: "You have 5 unread emails. Here are the most recent ones: ..."
+
+Now respond to the user:"""
+
+        # Use override if provided, else default to configured model
+        model_to_use = model_override or self._model_name
+        
+        MAX_STEPS = 100
+        current_step = 0
+        gemini_history = []
+        
+        # Build history from previous messages if provided
+        if chat_history:
+            for msg in chat_history:
+                role = "user" if msg.get("role") == "user" else "model"
+                content = msg.get("content", "")
+                if content:
+                    gemini_history.append(types.Content(
+                        role=role,
+                        parts=[types.Part.from_text(text=content)]
+                    ))
+        
+        # Add media if present
+        if media_data and media_mime_type:
+            gemini_history.append(types.Content(
+                parts=[types.Part.from_bytes(data=media_data, mime_type=media_mime_type)]
+            ))
+            message += "\n\n[SYSTEM: The user has attached media above. Analyze it to answer their request.]"
+        
+        # Build the current prompt - include system prompt only if no history
+        if gemini_history:
+            # We have history, just add the new user message
+            current_prompt = message
+        else:
+            # No history, include system prompt
+            current_prompt = f"{system_prompt}\n\nUser: {message}\n\nYour Response:"
+        
+        gemini_history.append(types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=current_prompt)]
+        ))
+        
+        try:
+            while current_step < MAX_STEPS:
+                current_step += 1
+                
+                # Yield thinking event
+                # yield {"type": "thinking", "content": f"Processing step {current_step}..."}
+
+                
+                # Determine thinking level based on model being used
+                thinking_level = "high" if "flash" in model_to_use.lower() else "high"
+                
+                # Generate content with STREAMING for word-by-word output
+                # Always use function calling tools - web search now delegates to SearchAgent
+                response_stream = self._client.models.generate_content_stream(
+                    model=model_to_use,
+                    contents=gemini_history,
+                    config=types.GenerateContentConfig(
+                        temperature=1.0,
+                        top_p=0.95,
+                        tools=get_tools(),
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                        thinking_config=types.ThinkingConfig(
+                            thinking_level=thinking_level,
+                            include_thoughts=True
+                        )
+                    )
+                )
+                
+                # Accumulate parts from streaming chunks for function call detection
+                accumulated_parts = []
+                text_parts = []
+                function_calls = []
+                
+                # Process streaming chunks - yield text immediately for word-by-word output
+                for chunk in response_stream:
+                    if chunk.candidates and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            accumulated_parts.append(part)
+                            
+                            # Check if this is a thought
+                            is_thought = False
+                            if hasattr(part, 'thought') and part.thought:
+                                is_thought = True
+                                # If part.thought is a string, use it. If it's True (bool), use part.text
+                                thought_content = part.text if hasattr(part, 'text') and part.text else ""
+                                if hasattr(part, 'thought') and isinstance(part.thought, str):
+                                    thought_content = part.thought
+                                
+                                if thought_content:
+                                    yield {"type": "thinking", "content": thought_content}
+                            
+                            # Stream text immediately as it arrives (only if NOT a thought)
+                            if not is_thought and hasattr(part, 'text') and part.text:
+                                yield {"type": "text", "content": part.text}
+                                text_parts.append(part.text)
+                            
+                            # Collect function calls
+                            if hasattr(part, 'function_call') and part.function_call:
+                                function_calls.append(part.function_call)
+                
+                # Build the full content from accumulated parts for history
+                full_content = types.Content(
+                    role="model",
+                    parts=accumulated_parts
+                )
+                gemini_history.append(full_content)
+                
+                # Process function calls if present
+                if function_calls:
+                    for call in function_calls:
+                        function_name = call.name
+                        function_args = dict(call.args) if call.args else {}
+                        
+                        # Yield tool call start event
+                        yield {
+                            "type": "tool_call_start",
+                            "name": function_name,
+                            "args": function_args
+                        }
+                        
+                        # Execute the function
+                        function_result = self._execute_function(function_name, function_args)
+                        
+                        # Yield tool call result event (full result - frontend handles display truncation)
+                        yield {
+                            "type": "tool_call_result",
+                            "name": function_name,
+                            "result": function_result
+                        }
+                        
+                        # Add function response to history
+                        tool_response_part = types.Part.from_function_response(
+                            name=function_name,
+                            response={"result": function_result}
+                        )
+                        
+                        gemini_history.append(types.Content(
+                            role="tool",
+                            parts=[tool_response_part]
+                        ))
+                    
+                    # Continue loop to let model process results
+                    continue
+                
+                # If we got text but no function calls, that's the final answer
+                if text_parts:
+                    yield {"type": "done"}
+                    return
+                
+                # No text or function call - unusual
+                yield {"type": "error", "content": "Unexpected response from AI model."}
+                yield {"type": "done"}
+                return
+            
+            # Max steps reached
+            yield {"type": "error", "content": "Maximum processing steps reached."}
+            yield {"type": "done"}
+            
+        except Exception as exc:
+            error_str = str(exc).lower()
+            
+            if "429" in str(exc) or "resource exhausted" in error_str or "quota" in error_str:
+                yield {"type": "error", "content": "Rate limit reached. Please try again in a moment."}
+            elif "blocked" in error_str or "safety" in error_str:
+                yield {"type": "error", "content": "Message was blocked. Please rephrase."}
+            elif "model" in error_str and ("not found" in error_str or "unavailable" in error_str):
+                yield {"type": "error", "content": "AI service temporarily unavailable."}
+            else:
+                yield {"type": "error", "content": f"Error: {str(exc)[:200]}"}
+            
+            yield {"type": "done"}
+
 

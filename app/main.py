@@ -2,6 +2,9 @@ import time
 import subprocess
 import os
 import sys
+import urllib.request
+import tempfile
+import zipfile
 from typing import List, Optional
 from pathlib import Path
 
@@ -9,29 +12,39 @@ from fastapi import FastAPI, HTTPException, status, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from nova_ai_agent.config import get_settings, Settings
 from nova_ai_agent.exceptions import ConfigurationError, GeminiError, WhatsAppError
 from nova_ai_agent.models import (
-    NovaPayload, 
-    NovaResponse, 
-    SystemStatus, 
+    NovaPayload,
+    NovaResponse,
+    SystemStatus,
     SessionStatus,
-    ActivityLogEntry, 
+    ActivityLogEntry,
     SystemConfig,
     ConfigUpdate,
     GmailStatus,
     EmailMessage,
     SendEmailRequest,
     CreateDraftRequest,
-    EmailListResponse
+    EmailListResponse,
+    AgentChatRequest,
+    # Chat History Models
+    ConversationData,
+    ConversationListItem,
+    MessageData,
+    CreateConversationRequest,
+    UpdateConversationRequest,
+    ChatMessageRequest,
+    GenerateTitleRequest,
 )
 from nova_ai_agent.nova_service import NovaService
 from nova_ai_agent.gemini import GeminiClient
 from nova_ai_agent.whatsapp import WhatsAppClient
 from nova_ai_agent.gmail import GmailClient
 from nova_ai_agent.opencode_client import OpenCodeClient
+from nova_ai_agent import database as chat_db
 
 app = FastAPI(title="Nova AI Assistant")
 
@@ -143,16 +156,131 @@ def startup_event() -> None:
 
 
 
+def _ensure_go_installed() -> Optional[str]:
+    """
+    Check if Go is installed. If not, download and install it.
+    Returns the path to the go executable, or None if installation failed.
+    """
+    # Check if go is already available
+    try:
+        result = subprocess.run(["go", "version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"Go is installed: {result.stdout.strip()}")
+            return "go"
+    except FileNotFoundError:
+        pass
+
+    # Check common installation path on Windows
+    go_default_path = Path("C:/Program Files/Go/bin/go.exe")
+    if go_default_path.exists():
+        print(f"Found Go at {go_default_path}")
+        return str(go_default_path)
+
+    print("Go is not installed. Attempting to install...")
+
+    # Download Go installer
+    go_version = "1.23.4"
+    go_installer_url = f"https://go.dev/dl/go{go_version}.windows-amd64.msi"
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            installer_path = Path(tmpdir) / "go_installer.msi"
+            print(f"Downloading Go {go_version} from {go_installer_url}...")
+
+            urllib.request.urlretrieve(go_installer_url, installer_path)
+            print("Download complete. Installing Go (this may take a minute)...")
+
+            # Run MSI installer silently
+            result = subprocess.run(
+                ["msiexec", "/i", str(installer_path), "/quiet", "/norestart"],
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode == 0:
+                print("Go installed successfully.")
+                # Return the path since it won't be in PATH for current process
+                if go_default_path.exists():
+                    return str(go_default_path)
+            else:
+                print(f"Go installation failed (exit code {result.returncode})")
+                print("Please install Go manually from https://go.dev/dl/")
+                return None
+
+    except Exception as e:
+        print(f"Failed to download/install Go: {e}")
+        print("Please install Go manually from https://go.dev/dl/")
+        return None
+
+    return None
+
+
+def _ensure_gcc_installed() -> Optional[str]:
+    """
+    Check if GCC is installed. If not, download and install MinGW-w64.
+    Returns the path to the mingw64 bin directory, or None if installation failed.
+    """
+    mingw_path = Path("C:/mingw64/bin")
+    gcc_path = mingw_path / "gcc.exe"
+
+    # Check if gcc is already available in PATH
+    try:
+        result = subprocess.run(["gcc", "--version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("GCC is installed (found in PATH)")
+            return None  # No need to add to PATH
+    except FileNotFoundError:
+        pass
+
+    # Check common installation path
+    if gcc_path.exists():
+        print(f"Found GCC at {gcc_path}")
+        return str(mingw_path)
+
+    print("GCC is not installed. Attempting to install MinGW-w64...")
+
+    # Download MinGW-w64 from winlibs (portable, no installer needed)
+    # Using GCC 15.2.0 MSVCRT release (stable, widely compatible)
+    mingw_url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/15.2.0posix-13.0.0-msvcrt-r5/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64msvcrt-13.0.0-r5.zip"
+
+    try:
+        # Download to a temp file
+        print("Downloading MinGW-w64 (~400MB, this may take a few minutes)...")
+        zip_path = Path(tempfile.gettempdir()) / "mingw64.zip"
+
+        urllib.request.urlretrieve(mingw_url, zip_path)
+        print("Download complete. Extracting to C:\\mingw64...")
+
+        # Extract to C:\mingw64
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("C:/")
+
+        # Clean up zip
+        zip_path.unlink()
+
+        if gcc_path.exists():
+            print("MinGW-w64 installed successfully.")
+            return str(mingw_path)
+        else:
+            print("Installation completed but gcc.exe not found.")
+            return None
+
+    except Exception as e:
+        print(f"Failed to download/install MinGW-w64: {e}")
+        print("Please install MinGW-w64 manually from https://winlibs.com/")
+        return None
+
+
 def _start_bridge():
     global _bridge_process, _settings
-    
+
     # 1. Check for existing bridge (Zombie protection)
     try:
-        # Check if main_v2.exe is already in the process list
-        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq main_v2.exe'], 
+        # Check if main.exe is already in the process list
+        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq main.exe'],
                               capture_output=True, text=True)
-        if "main_v2.exe" in result.stdout:
-            print("Found existing WhatsApp Bridge (main_v2.exe). Skipping startup to avoid duplicates.")
+        if "main.exe" in result.stdout:
+            print("Found existing WhatsApp Bridge (main.exe). Skipping startup to avoid duplicates.")
             print("Note: Bridge logs will not be visible in this window.")
             return
     except Exception as e:
@@ -160,7 +288,7 @@ def _start_bridge():
 
     # 2. Cleanup existing processes (if we didn't return above)
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "main_v2.exe"], 
+        subprocess.run(["taskkill", "/F", "/IM", "main.exe"], 
                       stdout=subprocess.DEVNULL, 
                       stderr=subprocess.DEVNULL,
                       check=False)
@@ -168,32 +296,67 @@ def _start_bridge():
     except Exception:
         pass
 
-    # 2. Start new process
+    # 3. Start new process (auto-build if missing)
     try:
-        bridge_path = Path(__file__).parents[1] / "whatsapp-mcp" / "whatsapp-bridge" / "main_v2.exe"
-        if bridge_path.exists():
-            print(f"Starting WhatsApp Bridge at {bridge_path}")
-            
-            # Prepare bridge environment
-            bridge_env = os.environ.copy()
-            # Map WHATSAPP_GROUP_NAME from config to NOVA_FORWARD_GROUP for the bridge
-            if _settings.whatsapp_group_name:
-                bridge_env["NOVA_FORWARD_GROUP"] = _settings.whatsapp_group_name
-                print(f"Configured bridge to forward messages from group: '{_settings.whatsapp_group_name}'")
-            
-            # CRITICAL: Tell bridge where the backend is (Port 80 for nova.ai)
-            bridge_env["NOVA_AGENT_URL"] = "http://localhost:80/nova"
-            print("Configured bridge to send messages to http://localhost:80/nova")
-            
-            _bridge_process = subprocess.Popen(
-                [str(bridge_path)],
-                cwd=str(bridge_path.parent),
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-                env=bridge_env
+        bridge_dir = Path(__file__).parents[1] / "whatsapp-mcp" / "whatsapp-bridge"
+        bridge_path = bridge_dir / "main.exe"
+
+        # Auto-build if executable doesn't exist
+        if not bridge_path.exists():
+            print("WhatsApp Bridge executable not found. Building from source...")
+            main_go = bridge_dir / "main.go"
+            if not main_go.exists():
+                print(f"Cannot build: main.go not found at {main_go}")
+                return
+
+            # Ensure Go is installed (auto-install if needed)
+            go_cmd = _ensure_go_installed()
+            if not go_cmd:
+                print("Cannot build WhatsApp Bridge: Go is not available.")
+                return
+
+            # Ensure GCC is installed for CGO (required by go-sqlite3)
+            gcc_bin_path = _ensure_gcc_installed()
+
+            # Prepare build environment with CGO enabled
+            build_env = os.environ.copy()
+            build_env["CGO_ENABLED"] = "1"
+
+            # Add GCC to PATH if we installed it
+            if gcc_bin_path:
+                build_env["PATH"] = gcc_bin_path + os.pathsep + build_env.get("PATH", "")
+                print(f"Added {gcc_bin_path} to PATH for CGO build")
+
+            print("Building WhatsApp Bridge (this may take a minute on first run)...")
+            result = subprocess.run(
+                [go_cmd, "build", "-o", "main.exe"],
+                cwd=str(bridge_dir),
+                capture_output=True,
+                text=True,
+                env=build_env
             )
-        else:
-            print(f"WhatsApp Bridge not found at {bridge_path}")
+            if result.returncode == 0:
+                print("WhatsApp Bridge built successfully.")
+            else:
+                print(f"Failed to build WhatsApp Bridge: {result.stderr}")
+                return
+
+        print(f"Starting WhatsApp Bridge at {bridge_path}")
+
+        # Prepare bridge environment
+        bridge_env = os.environ.copy()
+
+        # CRITICAL: Tell bridge where the backend is (Port 80 for nova.ai)
+        bridge_env["NOVA_AGENT_URL"] = "http://localhost:80/nova"
+        print("Configured bridge to send messages to http://localhost:80/nova")
+
+        _bridge_process = subprocess.Popen(
+            [str(bridge_path)],
+            cwd=str(bridge_dir),
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            env=bridge_env
+        )
     except Exception as e:
         print(f"Failed to start WhatsApp Bridge: {e}")
 
@@ -386,14 +549,110 @@ async def get_logs():
 async def get_config():
     if not _settings:
         raise HTTPException(status_code=500, detail="Settings not loaded")
-    
+
     return SystemConfig(
         gemini_model=_settings.gemini_model,
-        whatsapp_group_name=_settings.whatsapp_group_name,
         whatsapp_bridge_url=_settings.whatsapp_bridge_base_url,
         whatsapp_db_path=_settings.whatsapp_db_path,
         whatsapp_group_jid=_settings.whatsapp_group_jid
     )
+
+
+# =============================================================================
+# Research Mode API Endpoints (Google Search & URL Context)
+# =============================================================================
+
+@app.get("/api/research-mode")
+async def get_research_mode():
+    """Get current research mode settings (Google Search Grounding & URL Context).
+    
+    Research Mode enables real-time web search and URL content analysis,
+    but disables function calling tools (Gmail, OpenCode, WhatsApp) when active.
+    """
+    if _service is None:
+        raise HTTPException(status_code=503, detail="Nova service not ready")
+    
+    return {
+        "google_search_enabled": _service._gemini._google_search_enabled,
+        "url_context_enabled": _service._gemini._url_context_enabled,
+        "is_active": _service._gemini.is_research_mode_enabled(),
+        "description": "When Research Mode is active, function calling tools are disabled."
+    }
+
+
+@app.patch("/api/research-mode")
+async def update_research_mode(google_search_enabled: bool = None, url_context_enabled: bool = None):
+    """Update research mode settings.
+    
+    NOTE: Research Mode and function calling tools cannot be used together.
+    Enabling Research Mode will disable Gmail, OpenCode, and WhatsApp tools.
+    """
+    if _service is None:
+        raise HTTPException(status_code=503, detail="Nova service not ready")
+    
+    # Get current values if not provided
+    current = _service._gemini.get_research_mode()
+    new_google_search = google_search_enabled if google_search_enabled is not None else current["google_search_enabled"]
+    new_url_context = url_context_enabled if url_context_enabled is not None else current["url_context_enabled"]
+    
+    # Update the Gemini client
+    _service._gemini.set_research_mode(new_google_search, new_url_context)
+    
+    # Also update environment variables for persistence
+    try:
+        env_updates = {}
+        if google_search_enabled is not None:
+            env_updates["GOOGLE_SEARCH_ENABLED"] = str(google_search_enabled).lower()
+        if url_context_enabled is not None:
+            env_updates["URL_CONTEXT_ENABLED"] = str(url_context_enabled).lower()
+        
+        if env_updates:
+            _update_research_mode_env(env_updates)
+    except Exception as e:
+        print(f"Warning: Failed to persist research mode settings: {e}")
+    
+    return {
+        "google_search_enabled": new_google_search,
+        "url_context_enabled": new_url_context,
+        "is_active": new_google_search or new_url_context,
+        "message": "Research mode settings updated successfully"
+    }
+
+
+def _update_research_mode_env(updates: dict):
+    """Update research mode environment variables in .env file."""
+    env_path = Path(".env")
+    if not env_path.exists():
+        # Create .env with the new settings
+        with open(env_path, "w") as f:
+            for key, value in updates.items():
+                f.write(f"{key}={value}\n")
+        return
+    
+    with open(env_path, "r") as f:
+        lines = f.readlines()
+    
+    new_lines = []
+    keys_updated = set()
+    
+    for line in lines:
+        matched = False
+        for key, value in updates.items():
+            if line.startswith(f"{key}="):
+                new_lines.append(f"{key}={value}\n")
+                keys_updated.add(key)
+                matched = True
+                break
+        if not matched:
+            new_lines.append(line)
+    
+    # Add new keys if not present
+    for key, value in updates.items():
+        if key not in keys_updated:
+            new_lines.append(f"{key}={value}\n")
+    
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)
 
 def update_env_file(updates: dict):
     env_path = Path(".env")
@@ -405,11 +664,10 @@ def update_env_file(updates: dict):
     
     new_lines = []
     keys_updated = set()
-    
+
     mapping = {
         "gemini_api_key": "GEMINI_API_KEY",
         "gemini_model": "GEMINI_MODEL",
-        "whatsapp_group_name": "WHATSAPP_GROUP_NAME",
         "whatsapp_bridge_url": "WHATSAPP_BRIDGE_URL"
     }
     
@@ -443,7 +701,6 @@ async def update_config(payload: ConfigUpdate):
         env_mapping = {
             "gemini_api_key": "GEMINI_API_KEY",
             "gemini_model": "GEMINI_MODEL",
-            "whatsapp_group_name": "WHATSAPP_GROUP_NAME",
             "whatsapp_bridge_url": "WHATSAPP_BRIDGE_URL"
         }
         for key, env_key in env_mapping.items():
@@ -469,7 +726,11 @@ async def update_config(payload: ConfigUpdate):
                     from nova_ai_agent.gmail_tools import GmailAITools
                     gmail_tools = GmailAITools(_gmail_client)
                     _service.set_gmail_tools(gmail_tools)
-                    _service._gemini.set_gmail_tools(gmail_tools)
+                    _service._gemini.set_tools(gmail_tools)
+
+                # Reconnect OpenCode client if available
+                if _opencode_client:
+                    _service._gemini.set_opencode_client(_opencode_client)
             except Exception as e:
                 print(f"Warning: Failed to reinitialize service: {e}")
         
@@ -525,6 +786,378 @@ async def create_response(payload: NovaPayload) -> NovaResponse:
 
 
 # =============================================================================
+# Agent Chat API (Dashboard Chat UI with SSE streaming)
+# =============================================================================
+
+import json
+import asyncio
+from queue import Queue
+from threading import Thread
+
+
+@app.post("/api/agent/chat")
+async def agent_chat_stream(request: AgentChatRequest):
+    """Stream agent responses via Server-Sent Events (SSE).
+    
+    This endpoint is used by the dashboard chat UI to communicate with the AI agent
+    and see tool calls, thinking, and responses in real-time.
+    """
+    if _startup_error:
+        raise HTTPException(status_code=500, detail=f"Service misconfigured: {_startup_error}")
+    
+    if _service is None:
+        raise HTTPException(status_code=503, detail="Nova service not ready")
+    
+    # Use a queue for true real-time streaming
+    event_queue: Queue = Queue()
+    
+    def run_generator():
+        """Run the generator in a background thread and put events in queue."""
+        try:
+            for event in _service._gemini.generate_suggestion_stream(request.message):
+                event_queue.put(event)
+        except Exception as exc:
+            event_queue.put({"type": "error", "content": str(exc)[:200]})
+        finally:
+            event_queue.put({"type": "done"})
+            event_queue.put(None)  # Sentinel to signal completion
+    
+    # Start the generator in a background thread
+    thread = Thread(target=run_generator, daemon=True)
+    thread.start()
+    
+    async def event_generator():
+        """Async generator that yields events from the queue as they arrive."""
+        while True:
+            # Check queue periodically
+            while event_queue.empty():
+                await asyncio.sleep(0.05)  # 50ms polling
+            
+            event = event_queue.get()
+            
+            if event is None:  # Sentinel - we're done
+                break
+            
+            # Format as SSE: data: {json}\n\n
+            event_json = json.dumps(event)
+            yield f"data: {event_json}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
+
+
+# =============================================================================
+# Chat History API Endpoints
+# =============================================================================
+
+@app.get("/api/chats", response_model=List[ConversationListItem])
+async def list_conversations(page: int = 0, limit: int = 50):
+    """List all conversations, paginated, sorted by updated_at desc."""
+    try:
+        conversations = chat_db.get_conversations(page=page, limit=limit)
+        return conversations
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list conversations: {str(e)}")
+
+
+@app.post("/api/chats", response_model=ConversationData)
+async def create_conversation(request: CreateConversationRequest = None):
+    """Create a new conversation."""
+    try:
+        title = request.title if request else None
+        conversation = chat_db.create_conversation(title=title)
+        conversation["messages"] = []
+        return conversation
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create conversation: {str(e)}")
+
+
+@app.get("/api/chats/{conversation_id}", response_model=ConversationData)
+async def get_conversation(conversation_id: str):
+    """Get a conversation with all its messages."""
+    try:
+        conversation = chat_db.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return conversation
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get conversation: {str(e)}")
+
+
+@app.delete("/api/chats/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation and all its messages."""
+    try:
+        deleted = chat_db.delete_conversation(conversation_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return {"success": True, "message": "Conversation deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
+
+
+@app.patch("/api/chats/{conversation_id}", response_model=ConversationData)
+async def update_conversation(conversation_id: str, request: UpdateConversationRequest):
+    """Rename a conversation."""
+    try:
+        updated = chat_db.update_conversation(conversation_id, request.title)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        # Return the updated conversation
+        conversation = chat_db.get_conversation(conversation_id)
+        return conversation
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
+
+
+@app.delete("/api/chats")
+async def delete_all_chats():
+    """Delete all conversations."""
+    count = chat_db.delete_all_conversations()
+    return {"message": f"Deleted {count} conversations"}
+
+
+@app.post("/api/chats/{conversation_id}/generate-title")
+async def generate_conversation_title(conversation_id: str, request: GenerateTitleRequest):
+    """Generate a short AI-powered title for a conversation.
+
+    Uses the provided user message to generate a 2-3 word title.
+    Runs in parallel with the AI response generation.
+    """
+    if _service is None:
+        raise HTTPException(status_code=503, detail="Nova service not ready")
+
+    # Verify conversation exists
+    conversation = chat_db.get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Use the message from the request body (no race condition)
+    user_message = request.message
+    if not user_message:
+        return {"title": None, "message": "No message provided"}
+
+    try:
+        # Generate title using Gemini
+        title = await run_in_threadpool(
+            _service._gemini.generate_chat_title,
+            user_message
+        )
+
+        if title:
+            # Update the conversation title
+            chat_db.update_conversation(conversation_id, title)
+            return {"title": title, "success": True}
+        else:
+            return {"title": None, "message": "Failed to generate title"}
+    except Exception as e:
+        return {"title": None, "message": f"Error generating title: {str(e)}"}
+
+
+@app.post("/api/chats/{conversation_id}/messages")
+async def send_chat_message(conversation_id: str, request: ChatMessageRequest):
+    """Send a message to an existing conversation with SSE streaming.
+    
+    This endpoint stores the user message, generates an AI response with full
+    conversation context, streams events via SSE, and stores the assistant response.
+    """
+    if _startup_error:
+        raise HTTPException(status_code=500, detail=f"Service misconfigured: {_startup_error}")
+    
+    if _service is None:
+        raise HTTPException(status_code=503, detail="Nova service not ready")
+    
+    # Verify conversation exists
+    conversation = chat_db.get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Store user message
+    user_message = chat_db.add_message(
+        conversation_id=conversation_id,
+        role="user",
+        content=request.message
+    )
+    
+    # Auto-generate title from first message if this is the first user message
+    user_messages = [m for m in conversation.get("messages", []) if m["role"] == "user"]
+    if len(user_messages) == 0:
+        chat_db.update_conversation_title_from_message(conversation_id, request.message)
+    
+    # Build chat history for LLM context
+    chat_history = []
+    for msg in conversation.get("messages", []):
+        chat_history.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    
+    # Use a queue for true real-time streaming
+    event_queue: Queue = Queue()
+
+    # Generate message ID upfront for tracking
+    import uuid as uuid_module
+    assistant_message_id = str(uuid_module.uuid4())
+
+    # Create the assistant message immediately with status='streaming'
+    chat_db.add_message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content="",
+        status="streaming",
+        message_id=assistant_message_id
+    )
+
+    # Collect assistant response data for storage
+    response_data = {
+        "content_parts": [],
+        "tool_calls": [],
+        "thinking": [],
+        "trace_log": []
+    }
+
+    # Track last save time for periodic updates
+    last_save_time = [time.time()]
+    SAVE_INTERVAL = 1.0  # Save every 1 second during streaming
+
+    def save_progress():
+        """Save current streaming progress to database."""
+        final_content = "\n".join(response_data["content_parts"]).strip()
+        chat_db.update_message(
+            message_id=assistant_message_id,
+            content=final_content,
+            tool_calls=response_data["tool_calls"] if response_data["tool_calls"] else None,
+            thinking=response_data["thinking"] if response_data["thinking"] else None,
+            trace_log=response_data["trace_log"] if response_data["trace_log"] else None
+        )
+        last_save_time[0] = time.time()
+
+    def run_generator():
+        """Run the generator in a background thread and put events in queue."""
+        try:
+            for event in _service._gemini.generate_suggestion_stream(
+                message=request.message,
+                chat_history=chat_history,
+                model_override=request.model_override
+            ):
+                event_queue.put(event)
+
+                # Logic to maintain high-fidelity trace log (compressed)
+                event_type = event.get("type")
+                if event_type == "text":
+                    content = event.get("content", "")
+                    last_trace = response_data["trace_log"][-1] if response_data["trace_log"] else None
+                    if last_trace and last_trace["type"] == "text":
+                        last_trace["content"] += content
+                    else:
+                        response_data["trace_log"].append({"type": "text", "content": content})
+
+                elif event_type == "thinking":
+                    content = event.get("content", "")
+                    last_trace = response_data["trace_log"][-1] if response_data["trace_log"] else None
+                    if last_trace and last_trace["type"] == "thinking":
+                        last_trace["content"] += content
+                    else:
+                        response_data["trace_log"].append({"type": "thinking", "content": content})
+
+                elif event_type in ["tool_call_start", "tool_call_result"]:
+                    # Store discrete tool events
+                    response_data["trace_log"].append(dict(event))
+
+                # Collect legacy data fields for backward compatibility
+                if event_type == "text":
+                    response_data["content_parts"].append(event.get("content", ""))
+                elif event_type == "tool_call_start":
+                    response_data["tool_calls"].append({
+                        "name": event.get("name"),
+                        "args": event.get("args", {}),
+                        "result": None
+                    })
+                elif event_type == "tool_call_result":
+                    # Update the last tool call with its result
+                    if response_data["tool_calls"]:
+                        response_data["tool_calls"][-1]["result"] = event.get("result")
+                elif event_type == "thinking":
+                    thinking_content = event.get("content", "")
+                    if thinking_content:
+                        if response_data["thinking"]:
+                            response_data["thinking"][-1] += thinking_content
+                        else:
+                            response_data["thinking"].append(thinking_content)
+
+                # Periodically save progress to database
+                if time.time() - last_save_time[0] >= SAVE_INTERVAL:
+                    save_progress()
+
+        except Exception as exc:
+            event_queue.put({"type": "error", "content": str(exc)[:200]})
+        finally:
+            # Save final state and mark as complete
+            final_content = "\n".join(response_data["content_parts"]).strip()
+            if final_content or response_data["tool_calls"]:
+                chat_db.update_message(
+                    message_id=assistant_message_id,
+                    content=final_content,
+                    tool_calls=response_data["tool_calls"] if response_data["tool_calls"] else None,
+                    thinking=response_data["thinking"] if response_data["thinking"] else None,
+                    trace_log=response_data["trace_log"] if response_data["trace_log"] else None,
+                    status="complete"
+                )
+            else:
+                # No content generated - mark as complete anyway
+                chat_db.update_message(
+                    message_id=assistant_message_id,
+                    status="complete"
+                )
+
+            event_queue.put({"type": "done"})
+            event_queue.put(None)  # Sentinel to signal completion
+    
+    # Start the generator in a background thread
+    thread = Thread(target=run_generator, daemon=True)
+    thread.start()
+    
+    async def event_generator():
+        """Async generator that yields events from the queue as they arrive."""
+        while True:
+            # Check queue periodically
+            while event_queue.empty():
+                await asyncio.sleep(0.05)  # 50ms polling
+            
+            event = event_queue.get()
+            
+            if event is None:  # Sentinel - we're done
+                break
+            
+            # Format as SSE: data: {json}\n\n
+            event_json = json.dumps(event)
+            yield f"data: {event_json}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# =============================================================================
 # Gmail API Endpoints
 # =============================================================================
 
@@ -538,6 +1171,9 @@ async def gmail_status():
             needs_auth=True,
             credentials_found=False
         )
+    
+    # Proactively refresh token if expired to prevent false "disconnected" status
+    _gmail_client.refresh_if_needed()
     
     return GmailStatus(
         connected=_gmail_client.is_authenticated,

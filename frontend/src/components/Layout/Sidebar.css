@@ -1,0 +1,602 @@
+/* ===========================================
+   SIDEBAR - Clean Collapsed State Design
+   =========================================== */
+
+/* Base Sidebar */
+.sidebar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 260px;
+    min-width: 68px;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(24px);
+    border-right: 1px solid var(--glass-border);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Allow tooltips to overflow - critical for collapsed state */
+    overflow: visible;
+    z-index: 50;
+    /* GPU acceleration for smooth width animation */
+    will-change: width;
+}
+
+.sidebar--collapsed {
+    width: 68px;
+}
+
+/* Expand affordance - subtle highlight on right edge when collapsed */
+.sidebar--collapsed::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(14, 165, 233, 0) 15%,
+        rgba(14, 165, 233, 0.12) 50%,
+        rgba(14, 165, 233, 0) 85%,
+        transparent 100%
+    );
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.sidebar--collapsed:hover::after {
+    opacity: 1;
+}
+
+/* ===========================================
+   HEADER SECTION
+   =========================================== */
+
+.sidebar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1rem;
+    flex-shrink: 0;
+    min-height: 72px;
+    /* Match sidebar width transition exactly */
+    transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                justify-content 0s;
+    /* Prevent header content overflow during collapse */
+    overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar__header {
+    padding: 1.25rem 0.625rem;
+    justify-content: center;
+}
+
+/* Logo */
+.sidebar__logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    overflow: hidden;
+    /* No gap transition - instant change */
+}
+
+.sidebar--collapsed .sidebar__logo {
+    gap: 0;
+}
+
+.sidebar__logo-icon {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Remove the glow - cleaner look */
+.sidebar__logo-glow {
+    display: none;
+}
+
+.sidebar__logo-icon img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    position: relative;
+    z-index: 1;
+}
+
+.sidebar__logo-text {
+    display: flex;
+    flex-direction: column;
+    max-width: 150px;
+    opacity: 1;
+    /* Simple, unified transition - no delays */
+    transition: opacity 0.2s ease, max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar__logo-text {
+    max-width: 0;
+    opacity: 0;
+}
+
+.sidebar__logo-text h1 {
+    font-size: 1.375rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    background: linear-gradient(to right, white, var(--primary-hover));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0;
+}
+
+.sidebar__logo-text p {
+    color: var(--primary);
+    font-size: 0.65rem;
+    margin-top: 2px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.75;
+}
+
+/* Toggle Button */
+.sidebar__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease,
+        left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Prevent conflicting transforms */
+    transform-origin: center center;
+}
+
+.sidebar__toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-main);
+    border-color: var(--glass-border-light);
+}
+
+.sidebar__toggle:active {
+    transform: scale(0.92);
+}
+
+/* Focus visible for accessibility */
+.sidebar__toggle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.sidebar--collapsed .sidebar__toggle {
+    position: absolute;
+    /* Position below the logo (header is ~72px, so place at bottom of header area) */
+    top: 76px;
+    /* Use calc for precise centering without conflicting transforms */
+    left: calc(50% - 16px);
+    z-index: 10;
+}
+
+.sidebar--collapsed .sidebar__toggle:hover {
+    transform: scale(1.05);
+}
+
+.sidebar--collapsed .sidebar__toggle:active {
+    transform: scale(0.92);
+}
+
+/* ===========================================
+   NAVIGATION
+   =========================================== */
+
+.sidebar__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0.5rem 0.75rem;
+    flex-shrink: 0;
+    margin-top: 0.5rem;
+    transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar--collapsed .sidebar__nav {
+    padding: 0.5rem 0.625rem;
+    /* Add top margin to make room for the toggle button below logo */
+    margin-top: 2.5rem;
+    align-items: center;
+}
+
+/* Nav Item Wrapper (for tooltip positioning) */
+.sidebar__nav-item-wrapper {
+    position: relative;
+    width: 100%;
+    display: flex;
+    justify-content: flex-start;
+    transition: justify-content 0s;
+}
+
+.sidebar--collapsed .sidebar__nav-item-wrapper {
+    width: 100%;
+    justify-content: center;
+}
+
+/* Nav Item */
+.sidebar__nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    overflow: hidden;
+    /* Simple transitions - no width/height to avoid layout thrashing */
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, padding 0.2s ease;
+}
+
+.sidebar--collapsed .sidebar__nav-item {
+    width: 48px;
+    padding: 0.875rem;
+    gap: 0;
+    justify-content: center;
+}
+
+.sidebar__nav-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-main);
+}
+
+/* Focus visible for accessibility */
+.sidebar__nav-item:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+    border-radius: 10px;
+}
+
+.sidebar__nav-item--active {
+    background: linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0.04));
+    border-color: rgba(14, 165, 233, 0.2);
+    color: var(--primary-hover);
+    font-weight: 600;
+}
+
+.sidebar__nav-item--active:hover {
+    background: linear-gradient(90deg, rgba(14, 165, 233, 0.15), rgba(14, 165, 233, 0.06));
+}
+
+/* Active Indicator Bar */
+.sidebar__nav-indicator {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background: var(--primary);
+    box-shadow: 0 0 10px var(--primary-glow);
+    border-radius: 0 3px 3px 0;
+    transition:
+        height 0.2s ease,
+        width 0.2s ease;
+}
+
+.sidebar--collapsed .sidebar__nav-indicator {
+    left: 0;
+    width: 3px;
+    height: 16px;
+    border-radius: 0 2px 2px 0;
+}
+
+/* Nav Icon */
+.sidebar__nav-icon {
+    flex-shrink: 0;
+    /* Fixed size for consistent centering in collapsed mode */
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease;
+}
+
+.sidebar__nav-item:hover .sidebar__nav-icon {
+    transform: scale(1.05);
+}
+
+/* Nav Label */
+.sidebar__nav-label {
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    max-width: 150px;
+    opacity: 1;
+    overflow: hidden;
+    /* Unified transition - no staggered delays */
+    transition: opacity 0.2s ease, max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar--collapsed .sidebar__nav-label {
+    max-width: 0;
+    opacity: 0;
+}
+
+/* ===========================================
+   TOOLTIPS (Collapsed State Only)
+   =========================================== */
+
+.sidebar__tooltip {
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+    padding: 0.5rem 0.75rem;
+    background: rgba(15, 23, 42, 0.98);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border-light);
+    border-radius: 8px;
+    color: var(--text-main);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow:
+        0 4px 16px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1000;
+    transition:
+        opacity 0.15s ease,
+        visibility 0.15s ease,
+        transform 0.15s ease;
+}
+
+/* Only show tooltips when collapsed - with delay */
+.sidebar--collapsed .sidebar__nav-item-wrapper:hover .sidebar__tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+    transition-delay: 0.4s;
+}
+
+/* Tooltip arrow */
+.sidebar__tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+    width: 10px;
+    height: 10px;
+    background: rgba(15, 23, 42, 0.98);
+    border-left: 1px solid var(--glass-border-light);
+    border-bottom: 1px solid var(--glass-border-light);
+}
+
+/* ===========================================
+   CONVERSATIONS SECTION
+   =========================================== */
+
+.sidebar__conversations {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--glass-border);
+    margin-top: 0.75rem;
+    /* Clip scroll content but position relative for child overflow */
+    overflow: hidden;
+    position: relative;
+}
+
+/* ===========================================
+   SPACER
+   =========================================== */
+
+.sidebar__spacer {
+    flex: 1;
+    min-height: 20px;
+}
+
+/* Hide spacer when conversations are shown */
+.sidebar:has(.sidebar__conversations) .sidebar__spacer {
+    flex: 0;
+    min-height: 0;
+}
+
+/* ===========================================
+   FOOTER STATUS
+   =========================================== */
+
+.sidebar__footer {
+    padding: 1rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar--collapsed .sidebar__footer {
+    padding: 0.75rem 0.625rem;
+}
+
+.sidebar__status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.5), rgba(2, 6, 23, 0.7));
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    overflow: hidden;
+    /* Simple transition - no gap animation */
+    transition: padding 0.2s ease;
+}
+
+.sidebar--collapsed .sidebar__status {
+    padding: 0.75rem;
+    gap: 0;
+    justify-content: center;
+}
+
+/* Status Indicator (green dot) */
+.sidebar__status-indicator {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+}
+
+.sidebar__status-dot {
+    position: absolute;
+    inset: 0;
+    background: var(--success);
+    border-radius: 50%;
+    z-index: 1;
+}
+
+.sidebar__status-pulse {
+    position: absolute;
+    inset: -3px;
+    background: var(--success);
+    border-radius: 50%;
+    opacity: 0.4;
+    animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+    0%, 100% {
+        opacity: 0.4;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.15;
+        transform: scale(1.3);
+    }
+}
+
+/* Status Content */
+.sidebar__status-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    max-width: 150px;
+    opacity: 1;
+    overflow: hidden;
+    /* Unified transition - no staggered delays */
+    transition: opacity 0.2s ease, max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar--collapsed .sidebar__status-content {
+    max-width: 0;
+    opacity: 0;
+}
+
+.sidebar__status-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--success);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+}
+
+.sidebar__connection {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    white-space: nowrap;
+}
+
+/* Status tooltip for collapsed state */
+.sidebar--collapsed .sidebar__status {
+    position: relative;
+    cursor: default;
+}
+
+.sidebar--collapsed .sidebar__status::after {
+    content: 'System Online';
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    padding: 0.5rem 0.75rem;
+    background: rgba(15, 23, 42, 0.98);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border-light);
+    border-radius: 8px;
+    color: var(--success);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    box-shadow:
+        0 4px 16px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1000;
+    transform: translateY(-50%) translateX(-4px);
+    transition:
+        opacity 0.15s ease,
+        visibility 0.15s ease,
+        transform 0.15s ease;
+}
+
+.sidebar--collapsed .sidebar__status::before {
+    content: '';
+    position: absolute;
+    left: calc(100% + 6px);
+    top: 50%;
+    border: 6px solid transparent;
+    border-right-color: rgba(15, 23, 42, 0.98);
+    z-index: 1001;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-50%);
+    transition:
+        opacity 0.15s ease,
+        visibility 0.15s ease;
+}
+
+.sidebar--collapsed .sidebar__status:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+    transition-delay: 0.4s;
+}
+
+.sidebar--collapsed .sidebar__status:hover::before {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.4s;
+}
