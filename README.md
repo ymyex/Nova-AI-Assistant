@@ -29,11 +29,10 @@ vercel --prod --yes
 ```
 
 ## Auto Deploy On Push
-- Workflow: `.github/workflows/deploy-vercel.yml`
-- Trigger: every push to `main`
-- Required GitHub repo secret:
-  - `VERCEL_TOKEN` (create in GitHub: `Settings` -> `Secrets and variables` -> `Actions`)
-- Once `VERCEL_TOKEN` is set, each `main` push auto-deploys to Vercel production.
+- Managed directly by Vercel Git integration
+- Connected repo: `ymyex/coda-integration`
+- Production branch: `main`
+- No GitHub Actions workflow or `VERCEL_TOKEN` secret required for deploys.
 
 ## Verify Mapping
 ```bash
