@@ -62,17 +62,10 @@ const App: React.FC = () => {
     const [hasActiveMessages, setHasActiveMessages] = useState(false);
 
     const {
-        gatewayUrl,
-        gatewayToken,
-        gatewayPassword,
-        setGatewayUrl,
-        setGatewayToken,
-        setGatewayPassword,
         connectionState,
         error: gatewayError,
         sessions,
         isLoadingSessions,
-        connect,
         refreshSessions,
         loadSessionHistory,
         sendSessionMessage,
@@ -97,6 +90,9 @@ const App: React.FC = () => {
 
     useEffect(() => {
         if (sessions.length === 0) {
+            if (isLoadingSessions || connectionState !== 'connected') {
+                return;
+            }
             setActiveConversationId(null);
             localStorage.removeItem(ACTIVE_SESSION_KEY);
             return;
@@ -106,7 +102,7 @@ const App: React.FC = () => {
             const first = sessions[0]?.key ?? null;
             setActiveConversationId(first);
         }
-    }, [sessions, activeConversationId]);
+    }, [sessions, activeConversationId, isLoadingSessions, connectionState]);
 
     const handleUnlock = useCallback(() => {
         localStorage.setItem(AUTH_KEY, 'true');
@@ -358,16 +354,6 @@ const App: React.FC = () => {
                         onConversationsChanged={() => { void refreshSessions(); }}
                         connectionState={connectionState}
                         connectionError={gatewayError}
-                        gatewayUrl={gatewayUrl}
-                        gatewayToken={gatewayToken}
-                        gatewayPassword={gatewayPassword}
-                        onGatewayUrlChange={setGatewayUrl}
-                        onGatewayTokenChange={setGatewayToken}
-                        onGatewayPasswordChange={setGatewayPassword}
-                        onConnectGateway={async () => {
-                            await connect();
-                            await refreshSessions();
-                        }}
                         onRefreshSessions={async () => { await refreshSessions(); }}
                         loadSessionHistory={loadSessionHistory}
                         sendSessionMessage={sendSessionMessage}

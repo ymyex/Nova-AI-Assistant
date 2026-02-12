@@ -35,6 +35,42 @@ const STORAGE_KEYS = {
 } as const;
 
 const DEFAULT_GATEWAY_URL = 'wss://ymyex-windows.tail615b5c.ts.net';
+const RECONNECT_BASE_DELAY_MS = 1200;
+const RECONNECT_MAX_DELAY_MS = 15000;
+const RECONNECT_ERROR_FATAL_PATTERNS = [
+    'invalid connect params',
+    '/client/id',
+    'unauthorized',
+    'token mismatch',
+    'password mismatch',
+    'origin not allowed',
+    'device identity required',
+    'pairing required',
+];
+
+const CONNECT_CLIENT_PROFILES = [
+    {
+        id: 'webchat-ui',
+        displayName: 'Coda Neural Link',
+        version: '0.3.0',
+        platform: 'web',
+        mode: 'webchat',
+    },
+    {
+        id: 'openclaw-control-ui',
+        displayName: 'Coda Neural Link',
+        version: '0.3.0',
+        platform: 'web',
+        mode: 'webchat',
+    },
+    {
+        id: 'webchat',
+        displayName: 'Coda Neural Link',
+        version: '0.3.0',
+        platform: 'web',
+        mode: 'webchat',
+    },
+] as const;
 
 function normalizeWsUrl(input: string): string {
     const value = input.trim();
@@ -94,6 +130,11 @@ export function useNeuralLinkGateway() {
     const connectPromiseRef = useRef<Promise<void> | null>(null);
     const mountedRef = useRef(true);
     const connectedConfigRef = useRef<{ url: string; token: string; password: string } | null>(null);
+    const reconnectTimerRef = useRef<number | null>(null);
+    const reconnectAttemptRef = useRef(0);
+    const shouldReconnectRef = useRef(true);
+    const connectRef = useRef<(() => Promise<void>) | null>(null);
+    const refreshSessionsRef = useRef<(() => Promise<NeuralLinkSession[]>) | null>(null);
 
     const clearPendingRequests = useCallback((reason: string) => {
         for (const pending of pendingRef.current.values()) {
@@ -101,6 +142,19 @@ export function useNeuralLinkGateway() {
             pending.reject(new Error(reason));
         }
         pendingRef.current.clear();
+    }, []);
+
+    const clearReconnectTimer = useCallback(() => {
+        if (reconnectTimerRef.current !== null) {
+            window.clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+    }, []);
+
+    const shouldRetryConnectionError = useCallback((reason: string) => {
+        const text = reason.trim().toLowerCase();
+        if (!text) return true;
+        return !RECONNECT_ERROR_FATAL_PATTERNS.some((pattern) => text.includes(pattern));
     }, []);
 
     const emitEvent = useCallback((eventName: string, payload: unknown) => {
@@ -111,7 +165,11 @@ export function useNeuralLinkGateway() {
         }
     }, []);
 
-    const disconnect = useCallback(() => {
+    const closeSocket = useCallback((disableReconnect = true) => {
+        if (disableReconnect) {
+            shouldReconnectRef.current = false;
+        }
+        clearReconnectTimer();
         const ws = wsRef.current;
         wsRef.current = null;
         connectedConfigRef.current = null;
@@ -122,7 +180,58 @@ export function useNeuralLinkGateway() {
             setConnectionState('disconnected');
         }
         clearPendingRequests('Disconnected');
-    }, [clearPendingRequests]);
+    }, [clearPendingRequests, clearReconnectTimer]);
+
+    const scheduleReconnect = useCallback((reason: string) => {
+        if (!mountedRef.current || !shouldReconnectRef.current) {
+            return;
+        }
+        if (!shouldRetryConnectionError(reason)) {
+            return;
+        }
+        if (reconnectTimerRef.current !== null) {
+            return;
+        }
+
+        const delay = Math.min(
+            RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttemptRef.current,
+            RECONNECT_MAX_DELAY_MS
+        );
+        const waitMs = delay + Math.floor(Math.random() * 300);
+        reconnectAttemptRef.current += 1;
+
+        if (mountedRef.current) {
+            setError(`Connection lost. Retrying in ${Math.ceil(waitMs / 1000)}s.`);
+        }
+
+        reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!mountedRef.current || !shouldReconnectRef.current) {
+                return;
+            }
+            const connectNow = connectRef.current;
+            if (!connectNow) {
+                return;
+            }
+
+            void connectNow()
+                .then(() => {
+                    reconnectAttemptRef.current = 0;
+                    const refresh = refreshSessionsRef.current;
+                    if (refresh) {
+                        void refresh();
+                    }
+                })
+                .catch((err) => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    scheduleReconnect(message);
+                });
+        }, waitMs);
+    }, [shouldRetryConnectionError]);
+
+    const disconnect = useCallback(() => {
+        closeSocket(true);
+    }, [closeSocket]);
 
     const sendRpc = useCallback((method: string, params?: Record<string, unknown>, timeoutMs = 15000) => {
         return new Promise<unknown>((resolve, reject) => {
@@ -175,6 +284,9 @@ export function useNeuralLinkGateway() {
             return;
         }
 
+        shouldReconnectRef.current = true;
+        clearReconnectTimer();
+
         const normalizedUrl = normalizeWsUrl(gatewayUrl);
         if (!normalizedUrl) {
             const message = 'Gateway URL is required';
@@ -200,6 +312,7 @@ export function useNeuralLinkGateway() {
             wsRef.current?.readyState === WebSocket.OPEN &&
             isSameConfig
         ) {
+            reconnectAttemptRef.current = 0;
             return;
         }
 
@@ -208,7 +321,7 @@ export function useNeuralLinkGateway() {
             wsRef.current?.readyState === WebSocket.OPEN &&
             !isSameConfig
         ) {
-            disconnect();
+            closeSocket(false);
         }
 
         const connectPromise = new Promise<void>((resolve, reject) => {
@@ -265,7 +378,7 @@ export function useNeuralLinkGateway() {
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
                 if (wsRef.current === ws) {
                     wsRef.current = null;
                 }
@@ -275,34 +388,68 @@ export function useNeuralLinkGateway() {
                 }
                 if (!settled) {
                     fail('Connection closed during handshake');
+                    return;
+                }
+                if (shouldReconnectRef.current) {
+                    const reason =
+                        typeof event.reason === 'string' && event.reason.trim()
+                            ? event.reason
+                            : 'Connection closed';
+                    scheduleReconnect(reason);
                 }
             };
 
             ws.onopen = async () => {
                 try {
-                    const connectParams: Record<string, unknown> = {
-                        minProtocol: 3,
-                        maxProtocol: 3,
-                        client: {
-                            id: 'coda-neural-link',
-                            displayName: 'Coda Neural Link',
-                            version: '0.2.0',
-                            platform: 'web',
-                            mode: 'ui',
-                        },
-                    };
+                    let connected = false;
+                    let lastError: unknown = null;
 
-                    if (gatewayToken || gatewayPassword) {
-                        connectParams.auth = {
-                            ...(gatewayToken ? { token: gatewayToken } : {}),
-                            ...(gatewayPassword ? { password: gatewayPassword } : {}),
+                    for (const profile of CONNECT_CLIENT_PROFILES) {
+                        const connectParams: Record<string, unknown> = {
+                            minProtocol: 3,
+                            maxProtocol: 3,
+                            client: {
+                                id: profile.id,
+                                displayName: profile.displayName,
+                                version: profile.version,
+                                platform: profile.platform,
+                                mode: profile.mode,
+                            },
                         };
+
+                        if (gatewayToken || gatewayPassword) {
+                            connectParams.auth = {
+                                ...(gatewayToken ? { token: gatewayToken } : {}),
+                                ...(gatewayPassword ? { password: gatewayPassword } : {}),
+                            };
+                        }
+
+                        try {
+                            await sendRpc('connect', connectParams, 10000);
+                            connected = true;
+                            break;
+                        } catch (err) {
+                            lastError = err;
+                            const text = err instanceof Error ? err.message.toLowerCase() : '';
+                            const shouldTryNextProfile =
+                                text.includes('/client/id') ||
+                                text.includes('must be equal to constant') ||
+                                text.includes('invalid connect params');
+                            if (!shouldTryNextProfile) {
+                                break;
+                            }
+                        }
                     }
 
-                    await sendRpc('connect', connectParams, 10000);
+                    if (!connected) {
+                        throw lastError instanceof Error
+                            ? lastError
+                            : new Error('Failed to connect to gateway');
+                    }
 
                     if (mountedRef.current) {
                         setConnectionState('connected');
+                        setError('');
                     }
                     connectedConfigRef.current = nextConfig;
                     settled = true;
@@ -318,7 +465,15 @@ export function useNeuralLinkGateway() {
             connectPromiseRef.current = null;
         });
 
-        await connectPromiseRef.current;
+        try {
+            await connectPromiseRef.current;
+            reconnectAttemptRef.current = 0;
+            clearReconnectTimer();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            scheduleReconnect(message);
+            throw err;
+        }
     }, [
         connectionState,
         gatewayPassword,
@@ -327,7 +482,9 @@ export function useNeuralLinkGateway() {
         sendRpc,
         emitEvent,
         clearPendingRequests,
-        disconnect,
+        closeSocket,
+        clearReconnectTimer,
+        scheduleReconnect,
     ]);
 
     const refreshSessions = useCallback(async () => {
@@ -349,7 +506,6 @@ export function useNeuralLinkGateway() {
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to load sessions';
             setError(message);
-            setSessions([]);
             return [];
         } finally {
             setIsLoadingSessions(false);
@@ -474,20 +630,91 @@ export function useNeuralLinkGateway() {
     }, [gatewayPassword]);
 
     useEffect(() => {
+        connectRef.current = connect;
+    }, [connect]);
+
+    useEffect(() => {
+        refreshSessionsRef.current = refreshSessions;
+    }, [refreshSessions]);
+
+    useEffect(() => {
+        if (connectionState === 'connected') {
+            reconnectAttemptRef.current = 0;
+        }
+    }, [connectionState]);
+
+    useEffect(() => {
+        const tryReconnectNow = () => {
+            if (!mountedRef.current || !shouldReconnectRef.current) {
+                return;
+            }
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            const connectNow = connectRef.current;
+            if (!connectNow) {
+                return;
+            }
+
+            void connectNow()
+                .then(() => {
+                    const refresh = refreshSessionsRef.current;
+                    if (refresh) {
+                        void refresh();
+                    }
+                })
+                .catch((err) => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    scheduleReconnect(message);
+                });
+        };
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                tryReconnectNow();
+            }
+        };
+
+        window.addEventListener('online', tryReconnectNow);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
+        return () => {
+            window.removeEventListener('online', tryReconnectNow);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
+    }, [scheduleReconnect]);
+
+    useEffect(() => {
         mountedRef.current = true;
-        void connect()
-            .then(() => refreshSessions())
-            .catch(() => {
-                // Connection errors are surfaced in state.
-            });
+        shouldReconnectRef.current = true;
+
+        const bootstrapConnect = () => {
+            const connectNow = connectRef.current;
+            if (!connectNow) {
+                return;
+            }
+
+            void connectNow()
+                .then(() => {
+                    const refresh = refreshSessionsRef.current;
+                    if (refresh) {
+                        void refresh();
+                    }
+                })
+                .catch((err) => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    scheduleReconnect(message);
+                });
+        };
+
+        bootstrapConnect();
 
         return () => {
             mountedRef.current = false;
-            disconnect();
+            closeSocket(true);
         };
-        // Intentionally run once to avoid reconnecting on every settings keystroke.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [closeSocket, scheduleReconnect]);
 
     return {
         gatewayUrl,

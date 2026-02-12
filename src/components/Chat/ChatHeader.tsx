@@ -4,7 +4,6 @@ import {
     ChevronDown,
     CheckCircle,
     Activity,
-    Link2,
     RefreshCw
 } from 'lucide-react';
 import type { NeuralLinkConnectionState, NeuralLinkSession } from '../../types/neuralLink';
@@ -15,13 +14,6 @@ interface ChatHeaderProps {
     onSessionChange: (sessionKey: string) => void;
     connectionState: NeuralLinkConnectionState;
     connectionError: string;
-    gatewayUrl: string;
-    gatewayToken: string;
-    gatewayPassword: string;
-    onGatewayUrlChange: (value: string) => void;
-    onGatewayTokenChange: (value: string) => void;
-    onGatewayPasswordChange: (value: string) => void;
-    onConnectGateway: () => Promise<void> | void;
     onRefreshSessions: () => Promise<void> | void;
 }
 
@@ -31,17 +23,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     onSessionChange,
     connectionState,
     connectionError,
-    gatewayUrl,
-    gatewayToken,
-    gatewayPassword,
-    onGatewayUrlChange,
-    onGatewayTokenChange,
-    onGatewayPasswordChange,
-    onConnectGateway,
     onRefreshSessions
 }) => {
     const [showSessionDropdown, setShowSessionDropdown] = useState(false);
-    const [showConnectionPanel, setShowConnectionPanel] = useState(false);
     const sessionDropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -72,6 +56,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             : connectionState === 'connecting'
                 ? '#fbbf24'
                 : '#fca5a5';
+
+    const connectionLabel =
+        connectionState === 'connected'
+            ? 'NEURAL LINK CONNECTED'
+            : connectionState === 'connecting'
+                ? 'NEURAL LINK RECONNECTING'
+                : 'NEURAL LINK OFFLINE';
 
     return (
         <header
@@ -119,7 +110,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                             opacity: 0.7
                         }}
                     >
-                        NEURAL LINK ONLINE
+                        {connectionLabel}
                     </p>
                 </div>
 
@@ -143,25 +134,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     >
                         <RefreshCw size={13} />
                         Refresh
-                    </button>
-
-                    <button
-                        onClick={() => setShowConnectionPanel((prev) => !prev)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.35rem',
-                            padding: '0.45rem 0.65rem',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--glass-border)',
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            color: 'var(--text-main)',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        <Link2 size={13} />
-                        Neural Link
                     </button>
 
                     <div ref={sessionDropdownRef} style={{ position: 'relative' }}>
@@ -343,88 +315,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     </div>
                 </div>
             </div>
-
-            {showConnectionPanel && (
-                <div
-                    style={{
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: 'var(--radius-md)',
-                        background: 'rgba(0, 0, 0, 0.2)',
-                        padding: '0.7rem',
-                        display: 'grid',
-                        gridTemplateColumns: '2fr 1fr 1fr auto',
-                        gap: '0.5rem',
-                    }}
-                >
-                    <input
-                        value={gatewayUrl}
-                        onChange={(event) => onGatewayUrlChange(event.target.value)}
-                        placeholder="wss://gateway-host"
-                        style={{
-                            padding: '0.55rem 0.7rem',
-                            borderRadius: 8,
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            background: 'rgba(0,0,0,0.25)',
-                            color: 'white',
-                            fontSize: '0.78rem'
-                        }}
-                    />
-                    <input
-                        value={gatewayToken}
-                        onChange={(event) => onGatewayTokenChange(event.target.value)}
-                        placeholder="Token"
-                        style={{
-                            padding: '0.55rem 0.7rem',
-                            borderRadius: 8,
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            background: 'rgba(0,0,0,0.25)',
-                            color: 'white',
-                            fontSize: '0.78rem'
-                        }}
-                    />
-                    <input
-                        type="password"
-                        value={gatewayPassword}
-                        onChange={(event) => onGatewayPasswordChange(event.target.value)}
-                        placeholder="Password"
-                        style={{
-                            padding: '0.55rem 0.7rem',
-                            borderRadius: 8,
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            background: 'rgba(0,0,0,0.25)',
-                            color: 'white',
-                            fontSize: '0.78rem'
-                        }}
-                    />
-                    <button
-                        onClick={() => void onConnectGateway()}
-                        style={{
-                            padding: '0.55rem 0.8rem',
-                            borderRadius: 8,
-                            border: 'none',
-                            background: 'var(--primary)',
-                            color: 'black',
-                            fontWeight: 700,
-                            fontSize: '0.78rem',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        Connect
-                    </button>
-
-                    <div
-                        style={{
-                            gridColumn: '1 / -1',
-                            fontSize: '0.72rem',
-                            color: connectionError ? '#fca5a5' : 'var(--text-secondary)',
-                            fontFamily: 'monospace'
-                        }}
-                    >
-                        Status: {connectionState.toUpperCase()}
-                        {connectionError ? ` - ${connectionError}` : ''}
-                    </div>
-                </div>
-            )}
+            <div
+                style={{
+                    fontSize: '0.72rem',
+                    color: connectionError ? '#fca5a5' : 'var(--text-secondary)',
+                    fontFamily: 'monospace',
+                    padding: '0 0.2rem'
+                }}
+            >
+                Status: {connectionState.toUpperCase()}
+                {connectionError ? ` - ${connectionError}` : ''}
+            </div>
         </header>
     );
 };

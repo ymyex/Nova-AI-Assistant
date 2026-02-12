@@ -24,14 +24,6 @@ export interface AgentChatProps {
     connectionState: NeuralLinkConnectionState;
     /** Last connection or RPC error */
     connectionError: string;
-    /** Neural Link endpoint settings */
-    gatewayUrl: string;
-    gatewayToken: string;
-    gatewayPassword: string;
-    onGatewayUrlChange: (value: string) => void;
-    onGatewayTokenChange: (value: string) => void;
-    onGatewayPasswordChange: (value: string) => void;
-    onConnectGateway: () => Promise<void> | void;
     onRefreshSessions: () => Promise<void> | void;
     /** Gateway chat history loader */
     loadSessionHistory: (sessionKey: string) => Promise<unknown[]>;

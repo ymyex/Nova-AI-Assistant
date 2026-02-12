@@ -14,13 +14,6 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     onConversationsChanged,
     connectionState,
     connectionError,
-    gatewayUrl,
-    gatewayToken,
-    gatewayPassword,
-    onGatewayUrlChange,
-    onGatewayTokenChange,
-    onGatewayPasswordChange,
-    onConnectGateway,
     onRefreshSessions,
     loadSessionHistory,
     sendSessionMessage
@@ -73,13 +66,6 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 onSessionChange={onSetActiveConversation}
                 connectionState={connectionState}
                 connectionError={connectionError}
-                gatewayUrl={gatewayUrl}
-                gatewayToken={gatewayToken}
-                gatewayPassword={gatewayPassword}
-                onGatewayUrlChange={onGatewayUrlChange}
-                onGatewayTokenChange={onGatewayTokenChange}
-                onGatewayPasswordChange={onGatewayPasswordChange}
-                onConnectGateway={onConnectGateway}
                 onRefreshSessions={onRefreshSessions}
             />
 
