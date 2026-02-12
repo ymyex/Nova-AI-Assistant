@@ -2,13 +2,17 @@
 
 This repository currently contains **only** the Coda System web frontend (Vite + React + TypeScript).
 
-Deployed on Vercel:
-- https://coda.ymyex.me
+## Deployment Configuration (verified 2026-02-12)
+- Local repo path: `C:\Users\ymyex\Projects\ymyex.me\coda-integration`
+- GitHub remote (`coda`): `https://github.com/ymyex/coda-integration.git`
+- Legacy GitHub remote (`origin`): `https://github.com/ymyex/Nova-AI-Assistant.git`
+- Vercel project: `coda-integration`
+- Vercel project ID: `prj_YF84b0eOxN3FjAwcZudQngCtPLuZ`
+- Production domain: `https://coda.ymyex.me`
 
 ## Development
 
 ```bash
-cd frontend
 npm install
 npm run dev
 ```
@@ -16,11 +20,26 @@ npm run dev
 ## Production Build
 
 ```bash
-cd frontend
 npm run build
 ```
+
+## Deploy
+```bash
+vercel --prod --yes
+```
+
+## Verify Mapping
+```bash
+git remote -v
+vercel project inspect coda-integration
+vercel ls coda-integration --yes
+vercel domains inspect coda.ymyex.me
+```
+
+## Related Project
+- `https://ymyex.me` and `https://www.ymyex.me` map to Vercel project `portfolio`.
+- That app lives in `C:\Users\ymyex\Projects\ymyex.me\Portfolio`.
 
 ## Notes
 
 The previous backend and integrations (FastAPI, WhatsApp bridge, OpenCode, etc.) have been removed for now.
-
