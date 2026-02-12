@@ -17,6 +17,7 @@ interface ConversationListProps {
     hasMessages?: boolean;
     isCollapsed?: boolean;
     pendingNewChat?: boolean;
+    showNewChat?: boolean;
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
@@ -29,7 +30,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     onRename,
     isLoading = false,
     hasMessages = true,
-    pendingNewChat = false
+    pendingNewChat = false,
+    showNewChat = true
 }) => {
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -86,27 +88,32 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     };
 
     const handleNewChat = () => {
+        if (!showNewChat) {
+            return;
+        }
         if (!hasMessages && activeId && !pendingNewChat) {
             return;
         }
         onNewChat();
     };
 
-    const newChatDisabled = !hasMessages && activeId !== null && !pendingNewChat;
+    const newChatDisabled = !showNewChat || (!hasMessages && activeId !== null && !pendingNewChat);
 
     return (
         <div className="conv-list">
             {/* New Chat Button */}
-            <div className="conv-list__header">
-                <button
-                    className={`conv-list__new-btn ${newChatDisabled ? 'conv-list__new-btn--disabled' : ''}`}
-                    onClick={handleNewChat}
-                    disabled={newChatDisabled}
-                >
-                    <Plus size={16} strokeWidth={2.5} />
-                    <span>New Chat</span>
-                </button>
-            </div>
+            {showNewChat && (
+                <div className="conv-list__header">
+                    <button
+                        className={`conv-list__new-btn ${newChatDisabled ? 'conv-list__new-btn--disabled' : ''}`}
+                        onClick={handleNewChat}
+                        disabled={newChatDisabled}
+                    >
+                        <Plus size={16} strokeWidth={2.5} />
+                        <span>New Chat</span>
+                    </button>
+                </div>
+            )}
 
             {/* Conversation List */}
             <div className="conv-list__items custom-scrollbar">
@@ -235,13 +242,13 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             </div>
 
             {/* Clear History Button */}
-            {conversations.length > 0 && (
+            {conversations.length > 0 && onDeleteAll && (
                 <div className="conv-list__footer">
                     <button
                         className="conv-list__clear-btn"
                         onClick={() => {
                             if (confirm('Are you sure you want to delete ALL chat history? This cannot be undone.')) {
-                                onDeleteAll?.();
+                                onDeleteAll();
                             }
                         }}
                     >

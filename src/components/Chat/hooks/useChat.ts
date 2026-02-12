@@ -1,16 +1,13 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import type { Message, StreamItem, StoredMessage, ProcessStep, AgentEvent } from '../types';
-import type { ConversationListItem } from '../../../types/chat';
+import type { Message, StreamItem, StoredMessage, ProcessStep } from '../types';
+import type { SendSessionMessageParams } from '../../../types/neuralLink';
 
 interface UseChatOptions {
     activeConversationId: string | null;
-    pendingNewChat: boolean;
-    onConversationCreated?: (conv: ConversationListItem) => void;
     onConversationsChanged?: () => void;
-    onSetActiveConversation?: (id: string | null) => void;
-    onSetPendingNewChat?: (pending: boolean) => void;
-    onUpdateConversation?: (id: string, updates: Partial<ConversationListItem>) => void;
     scrollToBottom: (animated?: boolean, force?: boolean) => void;
+    loadSessionHistory: (sessionKey: string) => Promise<unknown[]>;
+    sendSessionMessage: (params: SendSessionMessageParams) => Promise<string>;
 }
 
 interface UseChatReturn {
@@ -20,128 +17,50 @@ interface UseChatReturn {
     hasStreamingMessage: boolean;
     input: string;
     setInput: (value: string) => void;
-    handleSend: (modelOverride?: string | null) => Promise<void>;
-    loadConversation: (conversationId: string, isPolling?: boolean) => Promise<void>;
+    handleSend: () => Promise<void>;
+    loadConversation: (sessionKey: string, isPolling?: boolean) => Promise<void>;
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }
 
-// Convert stored message from API to UI message format
+function extractTextFromContent(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+
+    const textParts = content
+        .map((part) => {
+            if (!part || typeof part !== 'object') return '';
+            const entry = part as Record<string, unknown>;
+            if (typeof entry.text === 'string') return entry.text;
+            if (typeof entry.content === 'string') return entry.content;
+            return '';
+        })
+        .filter(Boolean);
+
+    return textParts.join('\n\n').trim();
+}
+
 function storedToUIMessage(stored: StoredMessage): Message {
-    // If we have a high-fidelity trace log, use it to reconstruct exact history
-    if (stored.trace_log && stored.trace_log.length > 0) {
-        const steps: ProcessStep[] = [];
-
-        // De-duplicate consecutive entries with identical content
-        const deduplicatedLog = stored.trace_log.filter((entry, index, arr) => {
-            if (index === 0) return true;
-            const prev = arr[index - 1];
-            if (entry.type !== prev.type) return true;
-
-            if (entry.type === 'text' || entry.type === 'thinking') {
-                return entry.content !== prev.content;
-            }
-
-            if (entry.type === 'tool_call_start' || entry.type === 'tool_call_result') {
-                if (entry.name !== prev.name) return true;
-                const argsMatch = JSON.stringify(entry.args) === JSON.stringify(prev.args);
-                const resultMatch = entry.result === prev.result;
-                return !(argsMatch && resultMatch);
-            }
-
-            return true;
-        });
-
-        for (let i = 0; i < deduplicatedLog.length; i++) {
-            const event = deduplicatedLog[i];
-            if (event.type === 'text') {
-                steps.push({
-                    id: `${stored.id}-text-${i}`,
-                    type: 'text',
-                    content: event.content
-                });
-            } else if (event.type === 'thinking') {
-                steps.push({
-                    id: `${stored.id}-think-${i}`,
-                    type: 'thinking',
-                    content: event.content
-                });
-            } else if (event.type === 'tool_call_start') {
-                steps.push({
-                    id: `${stored.id}-tool-${event.name}-${i}`,
-                    type: 'tool_call',
-                    toolName: event.name,
-                    toolArgs: event.args,
-                    toolResult: undefined
-                });
-            } else if (event.type === 'tool_call_result') {
-                for (let j = steps.length - 1; j >= 0; j--) {
-                    if (steps[j].type === 'tool_call' &&
-                        steps[j].toolName === event.name &&
-                        !steps[j].toolResult) {
-                        steps[j].toolResult = event.result;
-                        break;
-                    }
-                }
-            } else if (event.type === 'file') {
-                steps.push({
-                    id: `${stored.id}-file-${i}`,
-                    type: 'file',
-                    file: event.file,
-                    fileAction: event.action
-                });
-            }
-        }
-
-        // For streaming messages, keep all steps together for inline rendering
-        if (stored.status === 'streaming') {
-            return {
-                id: stored.id,
-                role: stored.role === 'assistant' ? 'agent' : 'user',
-                content: '',
-                processSteps: steps.length > 0 ? steps : undefined,
-                status: stored.status
-            };
-        }
-
-        // For complete messages, extract the last text as the main content
-        const lastTextIndex = steps.map(s => s.type).lastIndexOf('text');
-        const lastTextStep = lastTextIndex >= 0 ? steps[lastTextIndex] : null;
-        const content = lastTextStep?.content || '';
-        const processSteps = lastTextIndex >= 0
-            ? [...steps.slice(0, lastTextIndex), ...steps.slice(lastTextIndex + 1)]
-            : steps;
-
-        return {
-            id: stored.id,
-            role: stored.role === 'assistant' ? 'agent' : 'user',
-            content: content,
-            processSteps: processSteps.length > 0 ? processSteps : undefined,
-            status: stored.status
-        };
-    }
-
-    // Fallback: Legacy reconstruction for old messages
     const processSteps: ProcessStep[] = [];
 
-    if (stored.tool_calls) {
-        for (let i = 0; i < stored.tool_calls.length; i++) {
-            const tc = stored.tool_calls[i];
+    if (Array.isArray(stored.thinking)) {
+        for (let i = 0; i < stored.thinking.length; i += 1) {
             processSteps.push({
-                id: `${stored.id}-tool-${tc.name}-${i}`,
-                type: 'tool_call',
-                toolName: tc.name,
-                toolArgs: tc.args as Record<string, unknown>,
-                toolResult: tc.result
+                id: `${stored.id}-thinking-${i}`,
+                type: 'thinking',
+                content: stored.thinking[i],
             });
         }
     }
 
-    if (stored.thinking) {
-        for (let i = 0; i < stored.thinking.length; i++) {
+    if (Array.isArray(stored.tool_calls)) {
+        for (let i = 0; i < stored.tool_calls.length; i += 1) {
+            const toolCall = stored.tool_calls[i];
             processSteps.push({
-                id: `${stored.id}-think-${i}`,
-                type: 'thinking',
-                content: stored.thinking[i]
+                id: `${stored.id}-tool-${i}`,
+                type: 'tool_call',
+                toolName: toolCall.name,
+                toolArgs: toolCall.args,
+                toolResult: toolCall.result,
             });
         }
     }
@@ -151,471 +70,288 @@ function storedToUIMessage(stored: StoredMessage): Message {
         role: stored.role === 'assistant' ? 'agent' : 'user',
         content: stored.content,
         processSteps: processSteps.length > 0 ? processSteps : undefined,
-        status: stored.status
+        status: stored.status,
+    };
+}
+
+function gatewayHistoryToUIMessage(raw: unknown, index: number): Message | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const entry = raw as Record<string, unknown>;
+    const roleRaw = typeof entry.role === 'string' ? entry.role : 'assistant';
+    if (roleRaw !== 'assistant' && roleRaw !== 'user') {
+        return null;
+    }
+
+    const content = entry.content;
+    const processSteps: ProcessStep[] = [];
+    let finalText = '';
+
+    if (typeof content === 'string') {
+        finalText = content;
+    } else if (Array.isArray(content)) {
+        const textParts: string[] = [];
+        for (let i = 0; i < content.length; i += 1) {
+            const block = content[i];
+            if (!block || typeof block !== 'object') continue;
+            const node = block as Record<string, unknown>;
+            const type = String(node.type ?? '');
+
+            if (typeof node.text === 'string') {
+                textParts.push(node.text);
+                continue;
+            }
+
+            if (typeof node.thinking === 'string') {
+                processSteps.push({
+                    id: `history-thinking-${index}-${i}`,
+                    type: 'thinking',
+                    content: node.thinking,
+                });
+                continue;
+            }
+
+            if (
+                type.toLowerCase().includes('tool') ||
+                typeof node.name === 'string' ||
+                typeof node.toolName === 'string'
+            ) {
+                processSteps.push({
+                    id: `history-tool-${index}-${i}`,
+                    type: 'tool_call',
+                    toolName:
+                        typeof node.name === 'string'
+                            ? node.name
+                            : typeof node.toolName === 'string'
+                                ? node.toolName
+                                : 'tool',
+                    toolArgs:
+                        node.args && typeof node.args === 'object'
+                            ? (node.args as Record<string, unknown>)
+                            : node.arguments && typeof node.arguments === 'object'
+                                ? (node.arguments as Record<string, unknown>)
+                                : undefined,
+                    toolResult:
+                        typeof node.result === 'string'
+                            ? node.result
+                            : typeof node.output === 'string'
+                                ? node.output
+                                : undefined,
+                });
+            }
+        }
+        finalText = textParts.join('\n\n').trim();
+    } else {
+        finalText = extractTextFromContent(content);
+    }
+
+    return {
+        id: String(entry.id ?? `history-${index}`),
+        role: roleRaw === 'assistant' ? 'agent' : 'user',
+        content: finalText || (roleRaw === 'assistant' && processSteps.length > 0 ? 'Done.' : ''),
+        processSteps: processSteps.length > 0 ? processSteps : undefined,
+        status:
+            entry.status === 'streaming' || entry.status === 'error'
+                ? (entry.status as 'streaming' | 'error')
+                : 'complete',
     };
 }
 
 /**
  * Hook for managing chat state and message handling.
+ * Uses OpenClaw Gateway sessions as the source of truth.
  */
 export function useChat(options: UseChatOptions): UseChatReturn {
     const {
         activeConversationId,
-        pendingNewChat,
-        onConversationCreated,
         onConversationsChanged,
-        onSetActiveConversation,
-        onSetPendingNewChat,
-        onUpdateConversation,
-        scrollToBottom
+        scrollToBottom,
+        loadSessionHistory,
+        sendSessionMessage
     } = options;
 
-    // Chat UI state - PER-CONVERSATION message cache
     const [messagesCache, setMessagesCache] = useState<Map<string, Message[]>>(new Map());
     const [input, setInput] = useState('');
     const [processingConversations, setProcessingConversations] = useState<Set<string>>(new Set());
     const [streamItemsMap, setStreamItemsMap] = useState<Map<string, StreamItem[]>>(new Map());
 
-    // Refs
     const inputRef = useRef<HTMLTextAreaElement | null>(null);
     const activeConversationIdRef = useRef<string | null>(activeConversationId);
-    const streamItemsRefsMap = useRef<Map<string, StreamItem[]>>(new Map());
-    const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
-    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Derived: current conversation's messages
     const messages = useMemo(() => {
         if (!activeConversationId) return [];
         return messagesCache.get(activeConversationId) || [];
     }, [messagesCache, activeConversationId]);
 
-    // Get stream items for the current conversation
     const streamItems = useMemo(() => {
         if (!activeConversationId) return [];
         return streamItemsMap.get(activeConversationId) || [];
     }, [activeConversationId, streamItemsMap]);
 
-    // Check if the CURRENT conversation is processing
     const isProcessing = activeConversationId !== null && processingConversations.has(activeConversationId);
+    const hasStreamingMessage = streamItems.length > 0 || isProcessing;
 
-    // Track if we should be polling based on streaming status
-    const hasStreamingMessage = useMemo(() => {
-        return messages.some(msg => msg.role === 'agent' && msg.status === 'streaming');
-    }, [messages]);
-
-    // Keep ref in sync
     useEffect(() => {
         activeConversationIdRef.current = activeConversationId;
     }, [activeConversationId]);
 
-    // Load a specific conversation's messages into the cache
-    const loadConversation = useCallback(async (conversationId: string, isPolling: boolean = false) => {
+    const loadConversation = useCallback(async (sessionKey: string, isPolling: boolean = false) => {
+        if (!sessionKey) return;
         try {
-            const response = await fetch(`/api/chats/${conversationId}`);
-            if (response.ok) {
-                const data = await response.json();
-                const uiMessages = (data.messages || []).map(storedToUIMessage);
+            const history = await loadSessionHistory(sessionKey);
+            const uiMessages: Message[] = history
+                .map((message, index) => {
+                    if (
+                        message &&
+                        typeof message === 'object' &&
+                        ('conversation_id' in (message as Record<string, unknown>) ||
+                            'trace_log' in (message as Record<string, unknown>) ||
+                            'tool_calls' in (message as Record<string, unknown>))
+                    ) {
+                        return storedToUIMessage(message as StoredMessage);
+                    }
+                    return gatewayHistoryToUIMessage(message, index);
+                })
+                .filter((message): message is Message => message !== null);
 
-                setMessagesCache(prev => {
-                    const newCache = new Map(prev);
-                    newCache.set(conversationId, uiMessages);
-                    return newCache;
-                });
+            setMessagesCache((prev) => {
+                const next = new Map(prev);
+                next.set(sessionKey, uiMessages);
+                return next;
+            });
 
-                const hasStreamingMsg = uiMessages.some(
-                    (msg: Message) => msg.role === 'agent' && msg.status === 'streaming'
-                );
-
-                if (hasStreamingMsg) {
-                    setProcessingConversations(prev => {
-                        if (prev.has(conversationId)) return prev;
-                        const next = new Set(prev);
-                        next.add(conversationId);
-                        return next;
-                    });
-                } else {
-                    setProcessingConversations(prev => {
-                        if (!prev.has(conversationId)) return prev;
-                        const next = new Set(prev);
-                        next.delete(conversationId);
-                        return next;
-                    });
-                }
-
-                if (!isPolling) {
-                    setTimeout(() => scrollToBottom(true, true), 100);
-                }
-            } else if (response.status === 404) {
-                onSetActiveConversation?.(null);
+            if (!isPolling) {
+                setTimeout(() => scrollToBottom(true, true), 60);
             }
         } catch (error) {
-            console.error('Failed to load conversation:', error);
+            console.error('Failed to load conversation history:', error);
         }
-    }, [scrollToBottom, onSetActiveConversation]);
+    }, [loadSessionHistory, scrollToBottom]);
 
-    // Load active conversation when it changes
     useEffect(() => {
-        if (activeConversationId) {
-            const hasActiveStream = streamItemsMap.has(activeConversationId) &&
-                (streamItemsMap.get(activeConversationId)?.length ?? 0) > 0;
+        if (!activeConversationId) return;
+        void loadConversation(activeConversationId);
+    }, [activeConversationId, loadConversation]);
 
-            if (!hasActiveStream) {
-                loadConversation(activeConversationId);
-            }
-        }
-    }, [activeConversationId, loadConversation, streamItemsMap]);
-
-    // Polling for updates when there are streaming messages
     useEffect(() => {
-        if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-        }
+        if (!activeConversationId) return;
+        const intervalId = setInterval(() => {
+            const current = activeConversationIdRef.current;
+            if (!current) return;
+            if (processingConversations.has(current)) return;
+            void loadConversation(current, true);
+        }, 10000);
+        return () => clearInterval(intervalId);
+    }, [activeConversationId, loadConversation, processingConversations]);
 
-        if (!activeConversationId || !hasStreamingMessage) {
-            return;
-        }
-
-        const pollFn = () => {
-            const currentConvId = activeConversationIdRef.current;
-            if (currentConvId) {
-                loadConversation(currentConvId, true);
-            }
-        };
-
-        pollFn();
-        pollingRef.current = setInterval(pollFn, 1000);
-
-        return () => {
-            if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
-            }
-        };
-    }, [activeConversationId, hasStreamingMessage, loadConversation]);
-
-    // Focus input on mount
     useEffect(() => {
         inputRef.current?.focus();
     }, []);
 
-    const handleSend = useCallback(async (modelOverride?: string | null) => {
+    const handleSend = useCallback(async () => {
         if (!input.trim() || isProcessing) return;
 
-        let conversationId = activeConversationId;
-        let isNewConversation = false;
-
-        if (!conversationId || pendingNewChat) {
-            try {
-                const response = await fetch('/api/chats', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
-                if (response.ok) {
-                    const newConv = await response.json();
-                    conversationId = newConv.id;
-                    onConversationCreated?.(newConv);
-                    onSetPendingNewChat?.(false);
-                    isNewConversation = true;
-                } else {
-                    throw new Error('Failed to create conversation');
-                }
-            } catch (error) {
-                console.error('Failed to create conversation:', error);
-                return;
-            }
+        const sessionKey = activeConversationId;
+        if (!sessionKey) {
+            const warning: Message = {
+                id: `warn-${Date.now()}`,
+                role: 'agent',
+                content: 'Select a session before sending a message.'
+            };
+            setMessagesCache((prev) => {
+                const next = new Map(prev);
+                const existing = next.get('unsorted') || [];
+                next.set('unsorted', [...existing, warning]);
+                return next;
+            });
+            return;
         }
 
-        const thisConversationId = conversationId!;
-
+        const text = input.trim();
         const userMessage: Message = {
-            id: Date.now().toString(),
+            id: `user-${Date.now()}`,
             role: 'user',
-            content: input.trim()
+            content: text,
         };
 
-        // Add user message to cache immediately
-        setMessagesCache(prev => {
-            const newCache = new Map(prev);
-            const existing = newCache.get(thisConversationId) || [];
-            newCache.set(thisConversationId, [...existing, userMessage]);
-            return newCache;
+        setMessagesCache((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(sessionKey) || [];
+            next.set(sessionKey, [...existing, userMessage]);
+            return next;
         });
         setInput('');
 
-        // Mark as processing
-        setProcessingConversations(prev => new Set(prev).add(thisConversationId));
-
-        // Initialize stream items
-        streamItemsRefsMap.current.set(thisConversationId, []);
-        setStreamItemsMap(prev => new Map(prev).set(thisConversationId, []));
-
-        const getStreamItems = () => streamItemsRefsMap.current.get(thisConversationId) || [];
-        const updateStreamItems = (items: StreamItem[]) => {
-            streamItemsRefsMap.current.set(thisConversationId, items);
-            setStreamItemsMap(prev => new Map(prev).set(thisConversationId, items));
-        };
-
-        // Create AbortController
-        const existingController = abortControllersRef.current.get(thisConversationId);
-        if (existingController) {
-            existingController.abort();
-        }
-        const abortController = new AbortController();
-        abortControllersRef.current.set(thisConversationId, abortController);
+        setProcessingConversations((prev) => new Set(prev).add(sessionKey));
+        setStreamItemsMap((prev) => new Map(prev).set(sessionKey, []));
 
         try {
-            // Generate title for new conversation in parallel
-            if (isNewConversation) {
-                fetch(`/api/chats/${thisConversationId}/generate-title`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: userMessage.content })
-                }).then(async (res) => {
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.title) {
-                            onUpdateConversation?.(thisConversationId, { title: data.title });
-                        }
-                    }
-                }).catch(() => {
-                    // Silently ignore errors
-                });
-            }
-
-            const response = await fetch(`/api/chats/${thisConversationId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: userMessage.content,
-                    model_override: modelOverride || undefined
-                }),
-                signal: abortController.signal
+            const finalText = await sendSessionMessage({
+                sessionKey,
+                message: text,
+                onDelta: (deltaText) => {
+                    const liveText: StreamItem = {
+                        id: `live-text-${sessionKey}`,
+                        type: 'text',
+                        content: deltaText,
+                    };
+                    setStreamItemsMap((prev) => new Map(prev).set(sessionKey, [liveText]));
+                    setTimeout(() => scrollToBottom(true, true), 20);
+                },
+                onError: (message) => {
+                    console.error('[NeuralLink] sendSessionMessage error:', message);
+                }
             });
 
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body');
-
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const event: AgentEvent = JSON.parse(line.slice(6));
-
-                            switch (event.type) {
-                                case 'thinking':
-                                    if (event.content) {
-                                        const currentItems = getStreamItems();
-                                        const lastItem = currentItems[currentItems.length - 1];
-
-                                        if (lastItem && lastItem.type === 'thinking') {
-                                            const updatedItem: StreamItem = {
-                                                ...lastItem,
-                                                content: (lastItem.content || '') + event.content
-                                            };
-                                            updateStreamItems([...currentItems.slice(0, -1), updatedItem]);
-                                        } else {
-                                            const thinkItem: StreamItem = {
-                                                id: `think-${Date.now()}-${Math.random()}`,
-                                                type: 'thinking',
-                                                content: event.content
-                                            };
-                                            updateStreamItems([...currentItems, thinkItem]);
-                                        }
-                                    }
-                                    break;
-
-                                case 'text':
-                                    if (event.content) {
-                                        const currentItems = getStreamItems();
-                                        const lastItem = currentItems[currentItems.length - 1];
-
-                                        if (lastItem && lastItem.type === 'text') {
-                                            const updatedItem: StreamItem = {
-                                                ...lastItem,
-                                                content: (lastItem.content || '') + event.content
-                                            };
-                                            updateStreamItems([...currentItems.slice(0, -1), updatedItem]);
-                                        } else {
-                                            const textItem: StreamItem = {
-                                                id: `text-${Date.now()}-${Math.random()}`,
-                                                type: 'text',
-                                                content: event.content
-                                            };
-                                            updateStreamItems([...currentItems, textItem]);
-                                        }
-                                    }
-                                    break;
-
-                                case 'tool_call_start':
-                                    if (event.name) {
-                                        const toolItem: StreamItem = {
-                                            id: `tool-${event.name}-${Date.now()}`,
-                                            type: 'tool_call',
-                                            toolName: event.name,
-                                            toolArgs: event.args,
-                                            isExecuting: true
-                                        };
-                                        updateStreamItems([...getStreamItems(), toolItem]);
-                                    }
-                                    break;
-
-                                case 'tool_call_result':
-                                    if (event.name) {
-                                        const items = [...getStreamItems()];
-                                        for (let i = items.length - 1; i >= 0; i--) {
-                                            if (items[i].type === 'tool_call' &&
-                                                items[i].toolName === event.name &&
-                                                items[i].isExecuting) {
-                                                items[i] = {
-                                                    ...items[i],
-                                                    toolResult: event.result,
-                                                    isExecuting: false
-                                                };
-                                                break;
-                                            }
-                                        }
-                                        updateStreamItems(items);
-                                    }
-                                    break;
-
-                                case 'error': {
-                                    const errorItem: StreamItem = {
-                                        id: `error-${Date.now()}`,
-                                        type: 'text',
-                                        content: `Error: ${event.content || 'An error occurred'}`
-                                    };
-                                    updateStreamItems([...getStreamItems(), errorItem]);
-                                    break;
-                                }
-
-                                case 'file':
-                                    if (event.file) {
-                                        const fileItem: StreamItem = {
-                                            id: `file-${Date.now()}-${Math.random()}`,
-                                            type: 'file',
-                                            file: event.file,
-                                            fileAction: event.action
-                                        };
-                                        updateStreamItems([...getStreamItems(), fileItem]);
-                                    }
-                                    break;
-
-                                case 'done':
-                                    break;
-                            }
-                        } catch {
-                            // Ignore parse errors for incomplete chunks
-                        }
-                    }
-                }
-            }
-
-            // Convert stream items to a single agent message for history
-            const finalStreamItems = getStreamItems();
-            if (finalStreamItems.length > 0) {
-                const merged: ProcessStep[] = [];
-                for (const item of finalStreamItems) {
-                    const last = merged[merged.length - 1];
-                    if (item.type === 'text' && last?.type === 'text') {
-                        merged[merged.length - 1] = {
-                            ...last,
-                            content: (last.content || '') + (item.content || '')
-                        };
-                    } else {
-                        merged.push({
-                            id: item.id,
-                            type: item.type,
-                            toolName: item.toolName,
-                            toolArgs: item.toolArgs,
-                            toolResult: item.toolResult,
-                            content: item.content,
-                            file: item.file,
-                            fileAction: item.fileAction
-                        });
-                    }
-                }
-
-                const lastTextIndex = merged.map(m => m.type).lastIndexOf('text');
-                const lastTextItem = lastTextIndex >= 0 ? merged[lastTextIndex] : null;
-                const messageContent = lastTextItem?.content || 'Task completed.';
-
-                const processSteps = lastTextIndex >= 0
-                    ? [...merged.slice(0, lastTextIndex), ...merged.slice(lastTextIndex + 1)]
-                    : merged;
-
-                const agentMessage: Message = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'agent',
-                    content: messageContent,
-                    processSteps: processSteps.length > 0 ? processSteps : undefined
-                };
-
-                setMessagesCache(prev => {
-                    const newCache = new Map(prev);
-                    const existing = newCache.get(thisConversationId) || [];
-                    newCache.set(thisConversationId, [...existing, agentMessage]);
-                    return newCache;
-                });
-            }
-
-            onConversationsChanged?.();
-
-        } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
-                console.log(`[handleSend] Request aborted for conversation ${thisConversationId}`);
-                return;
-            }
-
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
+            const agentMessage: Message = {
+                id: `assistant-${Date.now()}`,
                 role: 'agent',
-                content: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`
+                content: finalText || 'Done.',
             };
 
-            setMessagesCache(prev => {
-                const newCache = new Map(prev);
-                const existing = newCache.get(thisConversationId) || [];
-                newCache.set(thisConversationId, [...existing, errorMessage]);
-                return newCache;
+            setMessagesCache((prev) => {
+                const next = new Map(prev);
+                const existing = next.get(sessionKey) || [];
+                next.set(sessionKey, [...existing, agentMessage]);
+                return next;
+            });
+            onConversationsChanged?.();
+        } catch (error) {
+            const agentError: Message = {
+                id: `assistant-error-${Date.now()}`,
+                role: 'agent',
+                content: `Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+            setMessagesCache((prev) => {
+                const next = new Map(prev);
+                const existing = next.get(sessionKey) || [];
+                next.set(sessionKey, [...existing, agentError]);
+                return next;
             });
         } finally {
-            setProcessingConversations(prev => {
+            setProcessingConversations((prev) => {
                 const next = new Set(prev);
-                next.delete(thisConversationId);
+                next.delete(sessionKey);
                 return next;
             });
 
-            streamItemsRefsMap.current.delete(thisConversationId);
-            setStreamItemsMap(prev => {
+            setStreamItemsMap((prev) => {
                 const next = new Map(prev);
-                next.delete(thisConversationId);
+                next.delete(sessionKey);
                 return next;
             });
 
             inputRef.current?.focus();
+            setTimeout(() => scrollToBottom(true, true), 60);
         }
     }, [
         input,
         isProcessing,
         activeConversationId,
-        pendingNewChat,
-        onConversationCreated,
-        onSetPendingNewChat,
-        onUpdateConversation,
+        sendSessionMessage,
+        scrollToBottom,
         onConversationsChanged
     ]);
 
@@ -628,6 +364,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         setInput,
         handleSend,
         loadConversation,
-        inputRef
+        inputRef,
     };
 }

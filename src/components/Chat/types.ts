@@ -2,28 +2,41 @@
  * Type definitions for AgentChat components and hooks.
  */
 
-import type { ConversationListItem } from '../../types/chat';
+import type {
+    NeuralLinkConnectionState,
+    NeuralLinkSession,
+    SendSessionMessageParams
+} from '../../types/neuralLink';
 
 // Props for AgentChat component
 export interface AgentChatProps {
-    /** The model configured in settings (from /api/config). Used as default when no session override. */
-    configModel?: string;
-    /** Active conversation ID (managed by App.tsx) */
+    /** Active session key selected in the sidebar */
     activeConversationId: string | null;
-    /** Whether user clicked "New Chat" but hasn't sent a message yet */
-    pendingNewChat: boolean;
-    /** Callback when a new conversation is created (deferred creation) */
-    onConversationCreated?: (conv: ConversationListItem) => void;
-    /** Callback to trigger conversation list refresh */
-    onConversationsChanged?: () => void;
-    /** Callback to set active conversation ID */
-    onSetActiveConversation?: (id: string | null) => void;
+    /** Session options shown in header switcher */
+    sessions: NeuralLinkSession[];
+    /** Callback to set active conversation ID / session key */
+    onSetActiveConversation: (id: string) => void;
     /** Callback to update hasActiveMessages in parent */
     onSetHasMessages?: (hasMessages: boolean) => void;
-    /** Callback to set pending new chat state */
-    onSetPendingNewChat?: (pending: boolean) => void;
-    /** Callback to update a conversation's title */
-    onUpdateConversation?: (id: string, updates: Partial<ConversationListItem>) => void;
+    /** Callback to refresh sessions from gateway */
+    onConversationsChanged?: () => void;
+    /** Neural Link connection state */
+    connectionState: NeuralLinkConnectionState;
+    /** Last connection or RPC error */
+    connectionError: string;
+    /** Neural Link endpoint settings */
+    gatewayUrl: string;
+    gatewayToken: string;
+    gatewayPassword: string;
+    onGatewayUrlChange: (value: string) => void;
+    onGatewayTokenChange: (value: string) => void;
+    onGatewayPasswordChange: (value: string) => void;
+    onConnectGateway: () => Promise<void> | void;
+    onRefreshSessions: () => Promise<void> | void;
+    /** Gateway chat history loader */
+    loadSessionHistory: (sessionKey: string) => Promise<unknown[]>;
+    /** Gateway chat sender */
+    sendSessionMessage: (params: SendSessionMessageParams) => Promise<string>;
 }
 
 // File reference for shared files

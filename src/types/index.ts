@@ -59,4 +59,11 @@ export type {
     ApiErrorResponse,
 } from './persona';
 
+export type {
+    NeuralLinkConnectionState,
+    NeuralLinkSession,
+    NeuralLinkHistoryMessage,
+    SendSessionMessageParams,
+} from './neuralLink';
+
 

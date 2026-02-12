@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { MODEL_OPTIONS } from '../../constants/ModelOptions';
+import React, { useEffect, useCallback } from 'react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { InputArea } from './InputArea';
@@ -8,26 +7,26 @@ import { useChat } from './hooks/useChat';
 import type { AgentChatProps } from './types';
 
 export const AgentChat: React.FC<AgentChatProps> = ({
-    configModel,
     activeConversationId,
-    pendingNewChat,
-    onConversationCreated,
-    onConversationsChanged,
+    sessions,
     onSetActiveConversation,
     onSetHasMessages,
-    onSetPendingNewChat,
-    onUpdateConversation
+    onConversationsChanged,
+    connectionState,
+    connectionError,
+    gatewayUrl,
+    gatewayToken,
+    gatewayPassword,
+    onGatewayUrlChange,
+    onGatewayTokenChange,
+    onGatewayPasswordChange,
+    onConnectGateway,
+    onRefreshSessions,
+    loadSessionHistory,
+    sendSessionMessage
 }) => {
-    // Determine the effective default model (from config or fallback to first option)
-    const effectiveDefaultModel = configModel || MODEL_OPTIONS[0].id;
-
-    // Session-level model override (null = use default from config)
-    const [sessionModel, setSessionModel] = useState<string | null>(null);
-
-    // Auto-scroll hook
     const { containerRef, scrollToBottom } = useAutoScroll({ threshold: 150 });
 
-    // Chat state and logic hook
     const {
         messages,
         streamItems,
@@ -38,44 +37,50 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         inputRef
     } = useChat({
         activeConversationId,
-        pendingNewChat,
-        onConversationCreated,
         onConversationsChanged,
-        onSetActiveConversation,
-        onSetPendingNewChat,
-        onUpdateConversation,
-        scrollToBottom
+        scrollToBottom,
+        loadSessionHistory,
+        sendSessionMessage
     });
 
-    // Update parent with hasMessages state
     useEffect(() => {
         const hasMessages = messages.length > 0 || isProcessing;
         onSetHasMessages?.(hasMessages);
     }, [messages.length, isProcessing, onSetHasMessages]);
 
-    // Handle suggestion click from empty state
     const handleSuggestionClick = useCallback((command: string) => {
         setInput(command);
         inputRef.current?.focus();
     }, [setInput, inputRef]);
 
-    // Handle send with session model
     const handleSendMessage = useCallback(() => {
-        handleSend(sessionModel);
-    }, [handleSend, sessionModel]);
+        void handleSend();
+    }, [handleSend]);
 
     return (
-        <div style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'transparent',
-            minHeight: 0
-        }}>
+        <div
+            style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                background: 'transparent',
+                minHeight: 0
+            }}
+        >
             <ChatHeader
-                effectiveDefaultModel={effectiveDefaultModel}
-                sessionModel={sessionModel}
-                onSessionModelChange={setSessionModel}
+                sessions={sessions}
+                activeSessionKey={activeConversationId}
+                onSessionChange={onSetActiveConversation}
+                connectionState={connectionState}
+                connectionError={connectionError}
+                gatewayUrl={gatewayUrl}
+                gatewayToken={gatewayToken}
+                gatewayPassword={gatewayPassword}
+                onGatewayUrlChange={onGatewayUrlChange}
+                onGatewayTokenChange={onGatewayTokenChange}
+                onGatewayPasswordChange={onGatewayPasswordChange}
+                onConnectGateway={onConnectGateway}
+                onRefreshSessions={onRefreshSessions}
             />
 
             <MessageList

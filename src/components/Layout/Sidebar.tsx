@@ -218,6 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         hasMessages={hasActiveMessages}
                         isCollapsed={false}
                         pendingNewChat={pendingNewChat}
+                        showNewChat={false}
                     />
                 </div>
             )}
