@@ -2,6 +2,12 @@
 
 This repository currently contains **only** the Coda System web frontend (Vite + React + TypeScript).
 
+## OpenClaw Integration (Current)
+- Local OpenClaw source of truth: `S:\openclaw`
+- This dashboard is the remote UI layer for that local setup.
+- Active integration scope right now is chat (Neural Link) over Tailscale.
+- Detailed integration doc: `OPENCLAW_INTEGRATION.md`
+
 ## Deployment Configuration (verified 2026-02-12)
 - Local repo path: `C:\Users\ymyex\Projects\ymyex.me\coda-integration`
 - GitHub remote (`coda`): `https://github.com/ymyex/coda-integration.git`
