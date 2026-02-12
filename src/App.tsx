@@ -349,7 +349,6 @@ const App: React.FC = () => {
                     <AgentChat
                         activeConversationId={activeConversationId}
                         sessions={sessions}
-                        onSetActiveConversation={(id) => setActiveConversationId(id)}
                         onSetHasMessages={setHasActiveMessages}
                         onConversationsChanged={() => { void refreshSessions(); }}
                         connectionState={connectionState}

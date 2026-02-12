@@ -12,10 +12,8 @@ import type {
 export interface AgentChatProps {
     /** Active session key selected in the sidebar */
     activeConversationId: string | null;
-    /** Session options shown in header switcher */
+    /** Session list used for active-session display in header */
     sessions: NeuralLinkSession[];
-    /** Callback to set active conversation ID / session key */
-    onSetActiveConversation: (id: string) => void;
     /** Callback to update hasActiveMessages in parent */
     onSetHasMessages?: (hasMessages: boolean) => void;
     /** Callback to refresh sessions from gateway */

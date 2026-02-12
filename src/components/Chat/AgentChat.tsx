@@ -9,7 +9,6 @@ import type { AgentChatProps } from './types';
 export const AgentChat: React.FC<AgentChatProps> = ({
     activeConversationId,
     sessions,
-    onSetActiveConversation,
     onSetHasMessages,
     onConversationsChanged,
     connectionState,
@@ -63,7 +62,6 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             <ChatHeader
                 sessions={sessions}
                 activeSessionKey={activeConversationId}
-                onSessionChange={onSetActiveConversation}
                 connectionState={connectionState}
                 connectionError={connectionError}
                 onRefreshSessions={onRefreshSessions}
