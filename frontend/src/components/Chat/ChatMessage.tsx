@@ -5,17 +5,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolCallCard } from './ToolCallCard';
 import { ThinkingBlock } from './ThinkingBlock';
+import { FileCard } from './FileCard';
 import { markdownComponents, compactMarkdownComponents } from './MarkdownComponents';
-
-// Process step type (matches AgentChat)
-interface ProcessStep {
-    id: string;
-    type: 'tool_call' | 'text' | 'thinking';
-    toolName?: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult?: string;
-    content?: string;
-}
+import type { ProcessStep } from './types';
 
 interface ChatMessageProps {
     role: 'user' | 'agent';
@@ -27,8 +19,12 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, process
     const isUser = role === 'user';
     const [showSteps, setShowSteps] = useState(false);
 
-    const hasProcessSteps = processSteps && processSteps.length > 0;
-    const toolCallCount = processSteps?.filter(s => s.type === 'tool_call').length || 0;
+    // Separate file steps from other process steps
+    const fileSteps = processSteps?.filter(s => s.type === 'file') || [];
+    const otherSteps = processSteps?.filter(s => s.type !== 'file') || [];
+
+    const hasOtherSteps = otherSteps.length > 0;
+    const toolCallCount = otherSteps.filter(s => s.type === 'tool_call').length;
 
     return (
         <motion.div
@@ -74,8 +70,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, process
                 gap: '0.25rem',
                 alignItems: isUser ? 'flex-end' : 'flex-start'
             }}>
-                {/* Process Steps Toggle Button */}
-                {!isUser && hasProcessSteps && (
+                {/* Process Steps Toggle Button (excludes file steps) */}
+                {!isUser && hasOtherSteps && toolCallCount > 0 && (
                     <button
                         onClick={() => setShowSteps(!showSteps)}
                         style={{
@@ -98,9 +94,9 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, process
                     </button>
                 )}
 
-                {/* Collapsible Process Steps */}
+                {/* Collapsible Process Steps (excludes file steps) */}
                 <AnimatePresence>
-                    {showSteps && hasProcessSteps && (
+                    {showSteps && hasOtherSteps && (
                         <motion.div
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: 'auto' }}
@@ -119,7 +115,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, process
                                 gap: '0.5rem',
                                 marginLeft: '0.25rem'
                             }}>
-                                {processSteps!.map((step) => (
+                                {otherSteps.map((step) => (
                                     <div
                                         key={step.id}
                                         style={{
@@ -199,6 +195,21 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, process
                         </div>
                     )}
                 </div>
+
+                {/* File cards - rendered inline after the message content */}
+                {!isUser && fileSteps.length > 0 && (
+                    <div style={{ width: '100%', marginTop: '0.5rem' }}>
+                        {fileSteps.map((step) => (
+                            step.file && (
+                                <FileCard
+                                    key={step.id}
+                                    file={step.file}
+                                    action={step.fileAction}
+                                />
+                            )
+                        ))}
+                    </div>
+                )}
             </div>
         </motion.div>
     );

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, Edit3, MoreHorizontal, X, Check, Clock } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Edit3, MoreHorizontal, X, Check, Clock, Smartphone } from 'lucide-react';
 import type { ConversationListItem } from '../../types/chat';
+import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import './ConversationList.css';
 
 interface ConversationListProps {
@@ -16,22 +17,6 @@ interface ConversationListProps {
     hasMessages?: boolean;
     isCollapsed?: boolean;
     pendingNewChat?: boolean;
-}
-
-export function formatRelativeTime(dateString: string): string {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
@@ -185,8 +170,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                                         </div>
                                     ) : (
                                         <div className="conv-list__item-content">
-                                            <div className={`conv-list__item-avatar ${isActive ? 'conv-list__item-avatar--active' : ''}`}>
-                                                <MessageSquare size={12} />
+                                            <div className={`conv-list__item-avatar ${isActive ? 'conv-list__item-avatar--active' : ''} ${conv.source === 'whatsapp' ? 'conv-list__item-avatar--whatsapp' : ''}`}>
+                                                {conv.source === 'whatsapp' ? (
+                                                    <Smartphone size={12} />
+                                                ) : (
+                                                    <MessageSquare size={12} />
+                                                )}
                                             </div>
                                             <div className="conv-list__item-info">
                                                 <div className="conv-list__item-title">{conv.title}</div>

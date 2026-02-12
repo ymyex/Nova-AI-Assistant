@@ -95,6 +95,58 @@
     background-attachment: fixed;
   }
 
+  /* CSS Variable aliases for backwards compatibility with existing components */
+  :root {
+    /* Background aliases */
+    --bg-main: var(--color-bg-main);
+    --bg-secondary: var(--color-bg-secondary);
+    --bg-tertiary: var(--color-bg-tertiary);
+
+    /* Primary accent aliases */
+    --primary: var(--color-primary);
+    --primary-hover: var(--color-primary-hover);
+    --primary-dim: var(--color-primary-dim);
+    --primary-glow: var(--color-primary-glow);
+
+    /* Secondary accent aliases */
+    --secondary: var(--color-secondary);
+    --secondary-hover: var(--color-secondary-hover);
+    --secondary-dim: var(--color-secondary-dim);
+    --secondary-glow: var(--color-secondary-glow);
+
+    /* Functional color aliases */
+    --success: var(--color-success);
+    --success-glow: var(--color-success-glow);
+    --warning: var(--color-warning);
+    --warning-glow: var(--color-warning-glow);
+    --danger: var(--color-danger);
+    --danger-glow: var(--color-danger-glow);
+
+    /* Text aliases */
+    --text-main: var(--color-text-main);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-muted);
+    --text-highlight: var(--color-text-highlight);
+
+    /* Glass aliases */
+    --glass-border: var(--color-glass-border);
+    --glass-border-light: var(--color-glass-border-light);
+    --glass-bg: var(--color-glass-bg);
+    --glass-bg-hover: var(--color-glass-bg-hover);
+    --glass-shadow: var(--shadow-glass);
+
+    /* Radius aliases */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-full: 9999px;
+
+    /* Transition aliases */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.3s ease;
+    --transition-slow: 0.5s ease;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight font-bold;
   }
@@ -133,6 +185,20 @@
     background-clip: text;
     color: transparent;
     text-shadow: 0 0 30px var(--color-primary-dim);
+  }
+
+  /* Dashboard status grid - 3 columns on large screens, responsive */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  @media (min-width: 1200px) {
+    .dashboard-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 }
 

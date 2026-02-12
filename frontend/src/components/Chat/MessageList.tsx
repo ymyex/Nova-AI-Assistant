@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { ChatMessage } from './ChatMessage';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallCard } from './ToolCallCard';
+import { FileCard } from './FileCard';
 import { EmptyState } from './EmptyState';
 import { markdownComponents } from './MarkdownComponents';
 import type { Message, StreamItem, ProcessStep } from './types';
@@ -74,6 +75,13 @@ const StreamingMessageContent: React.FC<{ processSteps: ProcessStep[] }> = ({ pr
                                 isFinished={index !== array.length - 1}
                             />
                         </div>
+                    ) : step.type === 'file' && step.file ? (
+                        <div style={{ marginLeft: '3rem', marginBottom: '0.5rem', maxWidth: '90%' }}>
+                            <FileCard
+                                file={step.file}
+                                action={step.fileAction}
+                            />
+                        </div>
                     ) : (
                         <div style={{ marginLeft: '3rem', marginBottom: '0.5rem', maxWidth: '90%' }}>
                             <ToolCallCard
@@ -134,6 +142,13 @@ const LiveStreamContent: React.FC<{ streamItems: StreamItem[] }> = ({ streamItem
                             <ThinkingBlock
                                 content={item.content || ''}
                                 isFinished={index !== array.length - 1}
+                            />
+                        </div>
+                    ) : item.type === 'file' && item.file ? (
+                        <div style={{ marginLeft: '3rem', marginBottom: '0.5rem', maxWidth: '90%' }}>
+                            <FileCard
+                                file={item.file}
+                                action={item.fileAction}
                             />
                         </div>
                     ) : (

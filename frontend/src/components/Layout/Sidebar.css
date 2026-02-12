@@ -600,3 +600,97 @@
     visibility: visible;
     transition-delay: 0.4s;
 }
+
+/* ===========================================
+   EXPANDABLE NAV GROUP (Persona Agent)
+   =========================================== */
+
+.sidebar__nav-group {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Chevron icon for expandable groups */
+.sidebar__nav-chevron {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.sidebar__nav-item:hover .sidebar__nav-chevron {
+    color: var(--text-secondary);
+}
+
+/* Notification badge */
+.sidebar__nav-badge {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.625rem;
+    font-weight: 700;
+    border-radius: 9px;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+    animation: badgePulse 2s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+    0%, 100% { box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 2px 12px rgba(239, 68, 68, 0.6); }
+}
+
+.sidebar--collapsed .sidebar__nav-badge {
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 0.5625rem;
+    padding: 0 4px;
+}
+
+/* Sub-navigation container */
+.sidebar__nav-subitems {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 0.5rem;
+    margin-top: 2px;
+    margin-bottom: 4px;
+    border-left: 2px solid var(--glass-border);
+    margin-left: 1.5rem;
+}
+
+/* Sub-navigation items */
+.sidebar__nav-item--sub {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+}
+
+.sidebar__nav-item--sub .sidebar__nav-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.sidebar__nav-item--sub .sidebar__nav-indicator {
+    width: 2px;
+    height: 14px;
+    left: -0.5rem;
+}
+
+/* Hide sub-items in collapsed state */
+.sidebar--collapsed .sidebar__nav-subitems {
+    display: none;
+}
+
+.sidebar--collapsed .sidebar__nav-chevron {
+    display: none;
+}

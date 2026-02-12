@@ -82,6 +82,13 @@ function storedToUIMessage(stored: StoredMessage): Message {
                         break;
                     }
                 }
+            } else if (event.type === 'file') {
+                steps.push({
+                    id: `${stored.id}-file-${i}`,
+                    type: 'file',
+                    file: event.file,
+                    fileAction: event.action
+                });
             }
         }
 
@@ -485,13 +492,26 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                                     }
                                     break;
 
-                                case 'error':
+                                case 'error': {
                                     const errorItem: StreamItem = {
                                         id: `error-${Date.now()}`,
                                         type: 'text',
                                         content: `Error: ${event.content || 'An error occurred'}`
                                     };
                                     updateStreamItems([...getStreamItems(), errorItem]);
+                                    break;
+                                }
+
+                                case 'file':
+                                    if (event.file) {
+                                        const fileItem: StreamItem = {
+                                            id: `file-${Date.now()}-${Math.random()}`,
+                                            type: 'file',
+                                            file: event.file,
+                                            fileAction: event.action
+                                        };
+                                        updateStreamItems([...getStreamItems(), fileItem]);
+                                    }
                                     break;
 
                                 case 'done':
@@ -522,7 +542,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                             toolName: item.toolName,
                             toolArgs: item.toolArgs,
                             toolResult: item.toolResult,
-                            content: item.content
+                            content: item.content,
+                            file: item.file,
+                            fileAction: item.fileAction
                         });
                     }
                 }

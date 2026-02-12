@@ -1,5 +1,5 @@
-/**
- * TypeScript types for Nova AI chat history persistence.
+﻿/**
+ * TypeScript types for CODA AI chat history persistence.
  */
 
 // Tool call information stored in message history
@@ -38,6 +38,8 @@ export interface Conversation {
     created_at: string;
     updated_at: string;
     messages?: Message[];
+    source?: 'dashboard' | 'whatsapp';
+    whatsapp_jid?: string;
 }
 
 // Summary of a conversation for list display
@@ -45,6 +47,7 @@ export interface ConversationListItem {
     id: string;
     title: string;
     updated_at: string;
+    source?: 'dashboard' | 'whatsapp';
 }
 
 // Request to create a new conversation
@@ -62,3 +65,5 @@ export interface ChatMessageRequest {
     message: string;
     model_override?: string;
 }
+
+

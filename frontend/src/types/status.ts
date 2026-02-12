@@ -1,5 +1,5 @@
-/**
- * TypeScript types for Nova AI system status.
+﻿/**
+ * TypeScript types for CODA AI system status.
  *
  * These types represent the status of WhatsApp sessions and overall system state.
  * Used throughout the dashboard, settings, and status display components.
@@ -26,3 +26,5 @@ export interface SystemStatus {
     total_suggestions: number;
     failed_suggestions: number;
 }
+
+

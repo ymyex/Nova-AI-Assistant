@@ -1,5 +1,5 @@
-/**
- * Central type exports for Nova AI frontend.
+﻿/**
+ * Central type exports for CODA AI frontend.
  *
  * Import shared types from this barrel file:
  * ```
@@ -21,3 +21,42 @@ export type {
     UpdateConversationRequest,
     ChatMessageRequest,
 } from './chat';
+
+// Re-export persona types
+export type {
+    StyleProfile,
+    StyleProfileUpdate,
+    StyleProfileListResponse,
+    PersonalInfo,
+    PersonalInfoCreate,
+    PersonalInfoUpdate,
+    PersonalInfoListResponse,
+    PersonalInfoSearchResult,
+    PersonalInfoSearchResponse,
+    ProcessedInfo,
+    Category,
+    CategoryCreate,
+    CategoryUpdate,
+    CategoriesResponse,
+    GlobalAutoResponseSettings,
+    ChatAutoResponseConfig,
+    ChatConfigUpdate,
+    ChatConfigsResponse,
+    SensitivePermissions,
+    SensitivePermissionsUpdate,
+    ResponseLogEntry,
+    ResponseHistoryFilters,
+    ResponseHistoryResponse,
+    ResponseStats,
+    PendingApproval,
+    PendingApprovalsResponse,
+    ApprovalAction,
+    RejectionAction,
+    ApprovalResult,
+    BatchJob,
+    BatchError,
+    BatchStartResponse,
+    ApiErrorResponse,
+} from './persona';
+
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { GlassCard } from '../Shared/GlassCard';
 import { Button } from '../Shared/Button';
 import { Save, RefreshCw, LogOut, Check, Key, Smartphone, Mail, Upload, ExternalLink, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Cpu, Server } from 'lucide-react';
@@ -421,7 +421,7 @@ const GmailCard: React.FC = () => {
                         </div>
                         Gmail Integration
                     </h3>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Connect Nova to your Gmail to enable email management capabilities.</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Connect CODA to your Gmail to enable email management capabilities.</p>
                 </div>
                 {isConnected && (
                     <span style={{
@@ -649,7 +649,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                             </div>
                             Core Intelligence
                         </h3>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Configure the LLM model and credentials powering Nova.</p>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Configure the LLM model and credentials powering CODA.</p>
                     </div>
                 </div>
 
@@ -772,3 +772,5 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         </div>
     );
 };
+
+

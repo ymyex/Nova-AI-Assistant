@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, ChevronDown, CheckCircle } from 'lucide-react';
 import { MODEL_OPTIONS, getModelById } from '../../constants/ModelOptions';
 
@@ -55,7 +55,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     gap: '0.5rem'
                 }}>
                     <Sparkles size={18} className="text-primary" />
-                    NOVA INTELLIGENCE
+                    CODA INTELLIGENCE
                 </h2>
                 <p style={{
                     color: 'var(--text-secondary)',
@@ -247,3 +247,5 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         </header>
     );
 };
+
+

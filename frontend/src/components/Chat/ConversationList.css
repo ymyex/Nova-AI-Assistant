@@ -188,6 +188,16 @@
     color: var(--primary-hover);
 }
 
+.conv-list__item-avatar--whatsapp {
+    background: linear-gradient(135deg, rgba(37, 211, 102, 0.15), rgba(37, 211, 102, 0.08));
+    color: #25d366;
+}
+
+.conv-list__item-avatar--whatsapp.conv-list__item-avatar--active {
+    background: linear-gradient(135deg, rgba(37, 211, 102, 0.25), rgba(37, 211, 102, 0.15));
+    color: #2ede74;
+}
+
 .conv-list__item-info {
     flex: 1;
     min-width: 0;

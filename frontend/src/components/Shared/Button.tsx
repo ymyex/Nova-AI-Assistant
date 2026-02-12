@@ -2,45 +2,72 @@ import React from 'react';
 import { motion, type HTMLMotionProps } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
-type ButtonProps = Omit<HTMLMotionProps<"button">, 'children'> & {
+interface ButtonProps extends HTMLMotionProps<"button"> {
     variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
     isLoading?: boolean;
     icon?: React.ReactNode;
-    children?: React.ReactNode;
-};
-
-const variantClasses = {
-    primary: 'bg-gradient-to-br from-primary to-secondary text-white border-none shadow-[0_4px_15px_var(--color-primary-glow)]',
-    secondary: 'bg-bg-tertiary text-text-main border border-glass-border',
-    danger: 'bg-danger/15 text-danger border border-danger/30',
-    ghost: 'bg-transparent text-text-secondary border border-transparent',
-};
+}
 
 export const Button: React.FC<ButtonProps> = ({
     children,
     variant = 'primary',
     isLoading,
     icon,
-    className = '',
+    style,
     disabled,
     ...props
 }) => {
-    const isDisabled = disabled || isLoading;
+    const getBaseStyles = () => {
+        switch (variant) {
+            case 'primary':
+                return {
+                    background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                    color: '#fff',
+                    border: 'none',
+                    boxShadow: '0 4px 15px var(--primary-glow)'
+                };
+            case 'danger':
+                return {
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: 'var(--danger)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                };
+            case 'ghost':
+                return {
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid transparent',
+                };
+            default: // secondary
+                return {
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--glass-border)',
+                };
+        }
+    };
 
     return (
         <motion.button
-            className={`
-                py-3 px-6 rounded-md font-semibold
-                inline-flex items-center justify-center gap-2
-                transition-all duration-200
-                ${variantClasses[variant]}
-                ${isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
-                ${className}
-            `}
-            whileHover={{ scale: isDisabled ? 1 : 1.02 }}
-            whileTap={{ scale: isDisabled ? 1 : 0.98 }}
-            disabled={isDisabled}
-            {...props}
+            whileHover={{ scale: disabled ? 1 : 1.02 }}
+            whileTap={{ scale: disabled ? 1 : 0.98 }}
+            disabled={disabled || isLoading}
+            style={{
+                padding: '0.75rem 1.5rem',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: 600,
+                cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: disabled ? 0.6 : 1,
+                transition: 'all 0.2s',
+                ...getBaseStyles(),
+                ...style
+            }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            {...(props as any)}
         >
             {isLoading ? <Loader2 className="animate-spin" size={18} /> : icon}
             {children}
