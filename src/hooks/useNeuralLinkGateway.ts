@@ -50,23 +50,37 @@ const RECONNECT_ERROR_FATAL_PATTERNS = [
 
 const CONNECT_CLIENT_PROFILES = [
     {
+        id: 'gateway-client',
+        displayName: 'Coda Neural Link',
+        version: '0.3.1',
+        platform: 'web',
+        mode: 'ui',
+    },
+    {
+        id: 'cli',
+        displayName: 'Coda Neural Link',
+        version: '0.3.1',
+        platform: 'web',
+        mode: 'ui',
+    },
+    {
         id: 'webchat-ui',
         displayName: 'Coda Neural Link',
-        version: '0.3.0',
+        version: '0.3.1',
         platform: 'web',
         mode: 'webchat',
     },
     {
         id: 'openclaw-control-ui',
         displayName: 'Coda Neural Link',
-        version: '0.3.0',
+        version: '0.3.1',
         platform: 'web',
         mode: 'webchat',
     },
     {
         id: 'webchat',
         displayName: 'Coda Neural Link',
-        version: '0.3.0',
+        version: '0.3.1',
         platform: 'web',
         mode: 'webchat',
     },
