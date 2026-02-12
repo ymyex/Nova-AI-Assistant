@@ -13,9 +13,13 @@ Use this file as the canonical deployment and repository mapping for this projec
 ## Deployment
 - Deploy command (from repo root): `vercel --prod --yes`
 - Build command: `npm run build`
+- Vercel Git integration is enabled for `ymyex/coda-integration` on branch `main`.
+- Expected behavior: every push to `main` auto-deploys to production and auto-promotes to `https://coda.ymyex.me` on success.
+- No GitHub Actions deploy workflow is used in this repo.
 
 ## Verification Commands
 - `vercel project inspect coda-integration`
+- `vercel api /v9/projects/prj_YF84b0eOxN3FjAwcZudQngCtPLuZ` (check `link.productionBranch`, `gitProviderOptions.createDeployments`, latest `readySubstate`)
 - `vercel ls coda-integration --yes`
 - `vercel domains inspect coda.ymyex.me`
 - `git remote -v`

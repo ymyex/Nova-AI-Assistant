@@ -33,6 +33,8 @@ vercel --prod --yes
 - Connected repo: `ymyex/coda-integration`
 - Production branch: `main`
 - No GitHub Actions workflow or `VERCEL_TOKEN` secret required for deploys.
+- Pushes to `main` automatically create a production deployment.
+- Successful production deployments are automatically promoted and assigned to `https://coda.ymyex.me`.
 
 ## Verify Mapping
 ```bash
