@@ -4,7 +4,7 @@ import { Sidebar, type TabId } from './components/Layout/Sidebar';
 import { StatusGrid } from './components/Dashboard/StatusGrid';
 import { ActivityLogList } from './components/Dashboard/ActivityLog';
 import { ConfigForm } from './components/Settings/ConfigForm';
-import { NeuralLinkBridge } from './components/Chat/NeuralLinkBridge';
+import { AgentChat } from './components/Chat/AgentChat';
 import {
   StyleProfilesPage,
   StyleProfileDetailPage,
@@ -62,9 +62,19 @@ const App: React.FC = () => {
   const [pendingNewChat, setPendingNewChat] = useState(false);
   const [hasActiveMessages, setHasActiveMessages] = useState(false);
 
-  // Sessions are loaded by NeuralLinkBridge via Gateway WebSocket.
   const fetchConversations = useCallback(async () => {
-    setIsLoadingConversations(false);
+    setIsLoadingConversations(true);
+    try {
+      const response = await fetch('/api/chats');
+      if (response.ok) {
+        const data = await response.json();
+        setConversations(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error);
+    } finally {
+      setIsLoadingConversations(false);
+    }
   }, []);
 
   // Handle selecting a conversation
@@ -82,27 +92,68 @@ const App: React.FC = () => {
     localStorage.removeItem('CODA-active-chat');
   }, []);
 
-  // Sidebar actions are local-only in Gateway session mode.
-  const handleDeleteChat = useCallback((id: string) => {
-    setConversations(prev => prev.filter(c => c.id !== id));
-    if (activeConversationId === id) {
-      setActiveConversationId(null);
-      localStorage.removeItem('CODA-active-chat');
-    }
-  }, [activeConversationId]);
-
-  const handleRenameChat = useCallback((id: string, title: string) => {
-    setConversations(prev => prev.map(c =>
-      c.id === id ? { ...c, title } : c
-    ));
+  // Handle conversation created (called by AgentChat when deferred creation completes)
+  const handleConversationCreated = useCallback((newConv: ConversationListItem) => {
+    setConversations(prev => [newConv, ...prev]);
+    setActiveConversationId(newConv.id);
+    setPendingNewChat(false);
+    localStorage.setItem('CODA-active-chat', newConv.id);
   }, []);
 
-  const handleDeleteAllChats = useCallback(() => {
-    setConversations([]);
-    setActiveConversationId(null);
-    setPendingNewChat(false);
-    setHasActiveMessages(false);
-    localStorage.removeItem('CODA-active-chat');
+  // Delete a conversation
+  const handleDeleteChat = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setConversations(prev => prev.filter(c => c.id !== id));
+        if (activeConversationId === id) {
+          const remaining = conversations.filter(c => c.id !== id);
+          if (remaining.length > 0) {
+            setActiveConversationId(remaining[0].id);
+            localStorage.setItem('CODA-active-chat', remaining[0].id);
+          } else {
+            setActiveConversationId(null);
+            localStorage.removeItem('CODA-active-chat');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  }, [activeConversationId, conversations]);
+
+  // Rename a conversation
+  const handleRenameChat = useCallback(async (id: string, title: string) => {
+    try {
+      const response = await fetch(`/api/chats/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+      if (response.ok) {
+        setConversations(prev => prev.map(c =>
+          c.id === id ? { ...c, title } : c
+        ));
+      }
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+    }
+  }, []);
+
+  // Delete all conversations
+  const handleDeleteAllChats = useCallback(async () => {
+    try {
+      const response = await fetch('/api/chats', { method: 'DELETE' });
+      if (response.ok) {
+        setConversations([]);
+        setActiveConversationId(null);
+        setPendingNewChat(false);
+        setHasActiveMessages(false);
+        localStorage.removeItem('CODA-active-chat');
+      }
+    } catch (error) {
+      console.error('Failed to delete all conversations:', error);
+    }
   }, []);
 
   // Fetch conversations on mount
@@ -347,15 +398,19 @@ const App: React.FC = () => {
           flexDirection: 'column',
           height: '100%'
         }}>
-          <NeuralLinkBridge
-            activeSessionKey={activeConversationId}
-            onActiveSessionChange={(key) => {
-              handleSelectConversation(key);
-              setHasActiveMessages(true);
-            }}
-            onSessionsLoaded={(sessionItems) => {
-              setConversations(sessionItems);
-              setIsLoadingConversations(false);
+          <AgentChat
+            configModel={config.gemini_model}
+            activeConversationId={activeConversationId}
+            pendingNewChat={pendingNewChat}
+            onConversationCreated={handleConversationCreated}
+            onConversationsChanged={fetchConversations}
+            onSetActiveConversation={setActiveConversationId}
+            onSetHasMessages={setHasActiveMessages}
+            onSetPendingNewChat={setPendingNewChat}
+            onUpdateConversation={(id, updates) => {
+              setConversations(prev => prev.map(c =>
+                c.id === id ? { ...c, ...updates } : c
+              ));
             }}
           />
         </div>
