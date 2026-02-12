@@ -25,6 +25,7 @@ export type TabId = 'dashboard' | 'setup' | 'chat' | 'persona-profiles' | 'perso
 interface SidebarProps {
     activeTab: TabId;
     setActiveTab: (tab: TabId) => void;
+    chatOnlyMode?: boolean;
     isCollapsed?: boolean;
     onToggleCollapse?: () => void;
     conversations?: ConversationListItem[];
@@ -78,6 +79,7 @@ const configNavItem: NavItem = { id: 'setup', label: 'Configuration', icon: Sett
 export const Sidebar: React.FC<SidebarProps> = ({
     activeTab,
     setActiveTab,
+    chatOnlyMode = false,
     isCollapsed = false,
     onToggleCollapse,
     conversations = [],
@@ -194,13 +196,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Navigation */}
             <nav className="sidebar__nav">
                 {/* Main nav items */}
-                {mainNavItems.map(item => renderNavItem(item))}
+                {(chatOnlyMode ? mainNavItems.filter(item => item.id === 'chat') : mainNavItems)
+                    .map(item => renderNavItem(item))}
 
                 {/* Persona Agent section with sub-nav */}
-                {renderPersonaGroup()}
+                {!chatOnlyMode && renderPersonaGroup()}
 
                 {/* Configuration at the bottom of nav */}
-                {renderNavItem(configNavItem)}
+                {!chatOnlyMode && renderNavItem(configNavItem)}
             </nav>
 
             {/* Conversation List - Only when expanded and on chat tab */}

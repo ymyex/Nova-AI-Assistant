@@ -36,6 +36,7 @@ interface SystemConfig {
 
 const AUTH_KEY = 'CODA-master-authenticated';
 const ACTIVE_SESSION_KEY = 'CODA-active-session';
+const LEGACY_BACKEND_ENABLED = import.meta.env.VITE_ENABLE_LEGACY_API === 'true';
 
 const App: React.FC = () => {
     const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -54,7 +55,7 @@ const App: React.FC = () => {
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
 
     const [selectedProfileJid, setSelectedProfileJid] = useState<string | null>(null);
-    const { count: pendingApprovalsCount } = usePendingApprovals();
+    const { count: pendingApprovalsCount } = usePendingApprovals({ enabled: LEGACY_BACKEND_ENABLED });
 
     const [activeConversationId, setActiveConversationId] = useState<string | null>(() => {
         return localStorage.getItem(ACTIVE_SESSION_KEY);
@@ -139,6 +140,9 @@ const App: React.FC = () => {
     }, [deleteSession, activeConversationId]);
 
     const fetchStatusAndLogs = async () => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         try {
             const [statusRes, logsRes] = await Promise.all([
                 fetch('/api/status'),
@@ -157,6 +161,9 @@ const App: React.FC = () => {
     };
 
     const fetchConfig = async () => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         try {
             const configRes = await fetch('/api/config');
             if (!configRes.ok) return;
@@ -168,6 +175,9 @@ const App: React.FC = () => {
     };
 
     useEffect(() => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         fetchConfig();
         fetchStatusAndLogs();
         const interval = setInterval(fetchStatusAndLogs, 3000);
@@ -179,6 +189,9 @@ const App: React.FC = () => {
     };
 
     const handleSave = async () => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         setSaveStatus('saving');
         try {
             const payload = { ...config };
@@ -205,6 +218,9 @@ const App: React.FC = () => {
     };
 
     const handleReconnect = async (session: string) => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         try {
             await fetch(`/api/whatsapp/reconnect?session=${session}`, { method: 'POST' });
             fetchStatusAndLogs();
@@ -214,6 +230,9 @@ const App: React.FC = () => {
     };
 
     const handleUnpair = async (session: string) => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         if (!confirm(`Are you sure you want to log out from ${session} WhatsApp? You will need to scan the QR code again.`)) return;
         try {
             await fetch(`/api/whatsapp/unpair?session=${session}`, { method: 'POST' });
@@ -224,6 +243,9 @@ const App: React.FC = () => {
     };
 
     const handleRestartBridge = async () => {
+        if (!LEGACY_BACKEND_ENABLED) {
+            return;
+        }
         if (!confirm('Are you sure you want to restart the WhatsApp Bridge service? This will temporarily disconnect sessions.')) return;
         try {
             await fetch('/api/bridge/restart', { method: 'POST' });
@@ -249,6 +271,7 @@ const App: React.FC = () => {
             <Sidebar
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                chatOnlyMode={!LEGACY_BACKEND_ENABLED}
                 isCollapsed={sidebarCollapsed}
                 onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
                 conversations={conversations}
@@ -265,7 +288,7 @@ const App: React.FC = () => {
 
             <main style={{ flex: 1, overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 <AnimatePresence mode="wait">
-                    {activeTab === 'dashboard' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'dashboard' && (
                         <motion.div
                             key="dashboard"
                             {...pageTransition}
@@ -284,7 +307,7 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === 'setup' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'setup' && (
                         <motion.div key="setup" {...pageTransition} style={{ flex: 1, padding: '2.5rem' }}>
                             <header style={{ marginBottom: '2rem', textAlign: 'center' }}>
                                 <h2 className="text-gradient" style={{ fontSize: '2rem', fontWeight: 800 }}>Device Setup</h2>
@@ -306,7 +329,7 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === 'persona-profiles' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'persona-profiles' && (
                         <motion.div key="persona-profiles" {...pageTransition} style={{ flex: 1 }}>
                             {selectedProfileJid ? (
                                 <StyleProfileDetailPage chatJid={selectedProfileJid} onBack={() => setSelectedProfileJid(null)} />
@@ -318,7 +341,7 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === 'persona-info' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'persona-info' && (
                         <motion.div key="persona-info" {...pageTransition} style={{ flex: 1 }}>
                             <PersonalInfoPage />
                         </motion.div>
@@ -326,7 +349,7 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === 'persona-settings' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'persona-settings' && (
                         <motion.div key="persona-settings" {...pageTransition} style={{ flex: 1 }}>
                             <AutoResponsePage />
                         </motion.div>
@@ -334,7 +357,7 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === 'persona-history' && (
+                    {LEGACY_BACKEND_ENABLED && activeTab === 'persona-history' && (
                         <motion.div key="persona-history" {...pageTransition} style={{ flex: 1 }}>
                             <ResponseHistoryPage />
                         </motion.div>
